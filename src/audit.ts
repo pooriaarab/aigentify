@@ -1,6 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { SERVER_SCHEMA_URL } from './constants.js';
+import { SERVER_SCHEMA_URL, SERVER_SCHEMA_RE } from './constants.js';
 
 export type AuditStatus = 'pass' | 'fail' | 'warn' | 'na';
 export interface AuditCheck { id: string; status: AuditStatus; note: string; weight: number }
@@ -72,7 +72,7 @@ function parseJson(text: string): Record<string, unknown> | undefined {
 function validServer(text: string): { valid: boolean; reason: string } {
   const value = parseJson(text);
   if (!value) return { valid: false, reason: 'server.json is not valid JSON.' };
-  if (value.$schema !== SERVER_SCHEMA_URL) return { valid: false, reason: `server.json must use the exact schema URL ${SERVER_SCHEMA_URL}.` };
+  if (typeof value.$schema !== 'string' || !SERVER_SCHEMA_RE.test(value.$schema)) return { valid: false, reason: `server.json "$schema" must be a dated MCP registry schema like ${SERVER_SCHEMA_URL} (the bare .../server.json 404s).` };
   const missing = ['name', 'description', 'repository', 'version'].filter(key => !value[key]);
   if (missing.length) return { valid: false, reason: `server.json is missing: ${missing.join(', ')}.` };
   if (!Array.isArray(value.remotes) && !Array.isArray(value.packages)) return { valid: false, reason: 'server.json needs a remotes or packages entry.' };

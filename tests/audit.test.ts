@@ -38,7 +38,7 @@ describe('auditTarget', () => {
     }));
     const report = await auditTarget(directory);
     expect(check(report, 'server-json').status).toBe('fail');
-    expect(check(report, 'server-json').note).toContain('https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json');
+    expect(check(report, 'server-json').note).toContain('https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json');
   });
 
   it('warns when an offer uses pressure copy', async () => {
@@ -83,7 +83,7 @@ describe('generators', () => {
   it('generates valid server and offer JSON', () => {
     const server = JSON.parse(generate('server-json', params)) as Record<string, unknown>;
     const offer = JSON.parse(generate('offer', params)) as Record<string, unknown>;
-    expect(server.$schema).toBe('https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json');
+    expect(server.$schema).toBe('https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json');
     expect(server.packages).toBeDefined();
     expect(offer['@type']).toBe('SoftwareApplication');
     expect(JSON.stringify(offer)).toContain('Offer');
