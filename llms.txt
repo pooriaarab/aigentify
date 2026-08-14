@@ -1,0 +1,13 @@
+# agentify
+
+> Audit and generate agent-native product surfaces.
+
+## Product
+
+agentify checks a local product directory or live URL. It reports gaps in public agent instructions, MCP discovery, Offer JSON-LD, llms.txt, and sitemap.xml.
+
+## Interfaces
+
+- Library: `auditTarget` and `generate`.
+- CLI: `agentify audit`, `agentify init`, `agentify gen`, and `agentify mcp`.
+- MCP: `audit` and `gen` over stdio.

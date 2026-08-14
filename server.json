@@ -1,0 +1,19 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.pooriaarab/agentify",
+  "description": "Audit and generate agent-native product surfaces",
+  "repository": {
+    "url": "https://github.com/pooriaarab/agentify",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registry_type": "npm",
+      "identifier": "agentify",
+      "version": "0.1.0",
+      "runtime_hint": "npx",
+      "transport": {"type": "stdio"}
+    }
+  ]
+}
