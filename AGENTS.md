@@ -1,14 +1,14 @@
-# agentify
+# aigentify
 
 ## Mental model
 
-agentify audits whether a product is ready for agents and creates the public files that agents need.
+aigentify audits whether a product is ready for agents and creates the public files that agents need.
 
 ## The faces
 
-- Library: import `auditTarget` and `generate` from `agentify`.
-- CLI: use `agentify audit`, `agentify init`, `agentify gen`, or `agentify mcp`.
-- MCP: connect to `agentify-mcp` over stdio.
+- Library: import `auditTarget` and `generate` from `aigentify`.
+- CLI: use `aigentify audit`, `aigentify init`, `aigentify gen`, or `aigentify mcp`.
+- MCP: connect to `aigentify-mcp` over stdio.
 
 ## MCP tools
 
@@ -33,6 +33,6 @@ agentify audits whether a product is ready for agents and creates the public fil
 
 ## Offer
 
-agentify is free to use.
+aigentify is free to use.
 
 Price: USD 0

@@ -31,7 +31,7 @@ describe('auditTarget', () => {
   });
 
   it('flags a server.json that uses the retired schema URL', async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'agentify-schema-'));
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'aigentify-schema-'));
     await writeFile(path.join(directory, 'server.json'), JSON.stringify({
       $schema: 'https://static.modelcontextprotocol.io/schemas/2025-07-09/server.json',
       name: 'io.example/server', description: 'Example', repository: {url: 'https://example.com', source: 'github'}, version: '1.0.0', packages: [],
@@ -42,7 +42,7 @@ describe('auditTarget', () => {
   });
 
   it('warns when an offer uses pressure copy', async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), 'agentify-offer-'));
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'aigentify-offer-'));
     await writeFile(path.join(directory, 'AGENTS.md'), '# Product\n\n## Offer\n\nLimited time: act now.');
     await writeFile(path.join(directory, 'offer.jsonld'), '{"@type":"Offer","name":"Access","price":"10"}');
     const report = await auditTarget(directory);
