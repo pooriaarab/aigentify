@@ -1,6 +1,6 @@
-import type { AgentifyConfig } from '../config.js';
+import type { AigentifyConfig } from '../config.js';
 
-export function generateAgentsRoute(config: AgentifyConfig, framework = 'static'): string {
+export function generateAgentsRoute(config: AigentifyConfig, framework = 'static'): string {
   if (framework === 'next') {
     return `# Serve /agents.md from a Next route
 

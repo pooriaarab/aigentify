@@ -106,7 +106,7 @@ async function directorySnapshot(directory: string): Promise<Snapshot> {
   const mcpFile = files.find(file => /(?:^|\/)\.mcp\.json$/.test(file.replaceAll('\\', '/')));
   const packageFile = findFile(files, 'package.json');
   const packageText = await readText(packageFile);
-  const hasMcpBin = /"(?:agentify|[^"\n]*mcp[^"\n]*)"\s*:/i.test(packageText);
+  const hasMcpBin = /"(?:aigentify|[^"\n]*mcp[^"\n]*)"\s*:/i.test(packageText);
   const agentsText = await readText(agentsFile);
   const offerTexts = [agentsText, ...await Promise.all(files.filter(file => /\.(html?|json|jsonld|md|mdx|tsx|jsx|js|mjs|ts)$/.test(file)).map(readText))];
   const llmsFile = findFile(files, 'llms.txt');

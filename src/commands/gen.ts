@@ -1,12 +1,12 @@
 import { writeFile } from 'node:fs/promises';
 import { defaultConfig } from '../config.js';
 import { generate, type GenerateParams, type GeneratedArtifact } from '../generators/index.js';
-import { loadAgentifyConfig } from './load-config.js';
+import { loadAigentifyConfig } from './load-config.js';
 
 export type { GeneratedArtifact } from '../generators/index.js';
 
 export async function generateArtifact(artifact: GeneratedArtifact, directory = process.cwd(), params: GenerateParams = {}): Promise<string> {
-  const config = (await loadAgentifyConfig(directory)) ?? defaultConfig();
+  const config = (await loadAigentifyConfig(directory)) ?? defaultConfig();
   return generate(artifact, { ...config, ...params, offer: { ...(config.offer ?? {}), ...(params.offer ?? {}) } });
 }
 

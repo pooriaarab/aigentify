@@ -5,7 +5,7 @@ export interface OfferConfig {
   priceCurrency?: string;
 }
 
-export interface AgentifyConfig {
+export interface AigentifyConfig {
   name: string;
   description: string;
   repository: string;
@@ -15,11 +15,11 @@ export interface AgentifyConfig {
   offer?: OfferConfig;
 }
 
-export function defineConfig(config: AgentifyConfig): AgentifyConfig {
+export function defineConfig(config: AigentifyConfig): AigentifyConfig {
   return { ...config, repository: config.repository.replace(/\/+$/, ''), version: config.version ?? '0.1.0' };
 }
 
-export function defaultConfig(): AgentifyConfig {
+export function defaultConfig(): AigentifyConfig {
   return defineConfig({
     name: 'Your product',
     description: 'A product with an agent-native interface.',

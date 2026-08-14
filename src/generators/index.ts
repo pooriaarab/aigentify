@@ -1,4 +1,4 @@
-import type { AgentifyConfig } from '../config.js';
+import type { AigentifyConfig } from '../config.js';
 import { defaultConfig, defineConfig } from '../config.js';
 import { generateAgentsMd } from './agents.js';
 import { generateAgentsRoute } from './agents-route.js';
@@ -10,9 +10,9 @@ export * from './offer.js';
 export * from './server.js';
 
 export type GeneratedArtifact = 'agents-md' | 'server-json' | 'offer' | 'agents-route';
-export type GenerateParams = Partial<AgentifyConfig> & { framework?: string };
+export type GenerateParams = Partial<AigentifyConfig> & { framework?: string };
 
-function configFromParams(params: GenerateParams = {}): AgentifyConfig {
+function configFromParams(params: GenerateParams = {}): AigentifyConfig {
   const base = defaultConfig();
   return defineConfig({ ...base, ...params, offer: { ...(base.offer ?? {}), ...(params.offer ?? {}) } });
 }

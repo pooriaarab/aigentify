@@ -1,6 +1,6 @@
-import type { AgentifyConfig } from '../config.js';
+import type { AigentifyConfig } from '../config.js';
 
-export function generateAgentsMd(config: AgentifyConfig): string {
+export function generateAgentsMd(config: AigentifyConfig): string {
   const packageName = config.npmPackage ?? '<NPM_PACKAGE>';
   const mcp = config.mcpUrl ?? `npx ${packageName}`;
   const offer = config.offer;

@@ -1,11 +1,11 @@
-# agentify
+# aigentify
 
-agentify audits a product directory or live URL for agent-native readiness. It also creates the public artifacts that agents can use.
+aigentify audits a product directory or live URL for agent-native readiness. It also creates the public artifacts that agents can use.
 
 ## Install
 
 ```sh
-npm install agentify
+npm install aigentify
 ```
 
 ## Three faces
@@ -13,7 +13,7 @@ npm install agentify
 Use the library in JavaScript or TypeScript:
 
 ```ts
-import { auditTarget, generate } from 'agentify';
+import { auditTarget, generate } from 'aigentify';
 
 const report = await auditTarget('.');
 const instructions = generate('agents-md', {
@@ -26,34 +26,34 @@ const instructions = generate('agents-md', {
 Use the CLI:
 
 ```sh
-npx agentify audit .
-npx agentify gen agents-md
-npx agentify gen server-json --out server.json
+npx aigentify audit .
+npx aigentify gen agents-md
+npx aigentify gen server-json --out server.json
 ```
 
 Use the MCP server with an MCP client:
 
 ```sh
-npx agentify-mcp
+npx aigentify-mcp
 ```
 
 The MCP server exposes `audit` with `{ target }` and `gen` with `{ artifact, params }`.
 
 ## Commands
 
-- `agentify audit [target]` checks a directory or URL. The default target is `.`.
-- `agentify init` writes starter `AGENTS.md` and `server.json` files. Existing files stay unchanged.
-- `agentify gen <artifact>` prints an artifact or writes it with `--out`.
-- `agentify mcp` starts the stdio MCP server.
+- `aigentify audit [target]` checks a directory or URL. The default target is `.`.
+- `aigentify init` writes starter `AGENTS.md` and `server.json` files. Existing files stay unchanged.
+- `aigentify gen <artifact>` prints an artifact or writes it with `--out`.
+- `aigentify mcp` starts the stdio MCP server.
 
 Artifacts are `agents-md`, `server-json`, `offer`, and `agents-route`.
 
 ## Configuration
 
-Add an optional `agentify.config.ts`, `agentify.config.js`, or `agentify.config.mjs` file. Export `defineConfig(...)` data as the default export or as `agentifyConfig`.
+Add an optional `aigentify.config.ts`, `aigentify.config.js`, or `aigentify.config.mjs` file. Export `defineConfig(...)` data as the default export or as `aigentifyConfig`.
 
 ```ts
-import { defineConfig } from 'agentify';
+import { defineConfig } from 'aigentify';
 
 export default defineConfig({
   name: 'Example product',
