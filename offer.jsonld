@@ -1,14 +1,14 @@
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": "agentify",
+  "name": "aigentify",
   "description": "Audit and generate agent-native product surfaces",
   "applicationCategory": "DeveloperApplication",
   "offers": [
     {
       "@type": "Offer",
-      "name": "agentify access",
-      "description": "The agentify npm package and its command-line and MCP interfaces.",
+      "name": "aigentify access",
+      "description": "The aigentify npm package and its command-line and MCP interfaces.",
       "price": "0",
       "priceCurrency": "USD"
     }

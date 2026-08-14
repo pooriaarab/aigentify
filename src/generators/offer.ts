@@ -1,6 +1,6 @@
-import type { AgentifyConfig } from '../config.js';
+import type { AigentifyConfig } from '../config.js';
 
-export function generateOffer(config: AgentifyConfig): string {
+export function generateOffer(config: AigentifyConfig): string {
   const offer = config.offer ?? {};
   const data = {
     '@context': 'https://schema.org',
