@@ -11,13 +11,18 @@ export interface AuditOptions { fetch?: typeof globalThis.fetch }
 interface Endpoint { status: number; contentType: string; text: string }
 interface Snapshot {
   agents: Endpoint; server: Endpoint; mcp: Endpoint; home: Endpoint; llms: Endpoint; sitemap: Endpoint;
-  honestText: string; hasMcp: boolean; networkFailure: boolean;
+  wellKnown: Endpoint; openapi: Endpoint; agentsPage: Endpoint;
+  honestText: string; hasMcp: boolean; networkFailure: boolean; isUrl: boolean;
 }
+
+function ok(status: number): boolean { return status >= 200 && status < 400; }
 
 const SKIPPED = new Set(['.git', 'node_modules', 'dist', 'coverage', '.next', '_reference_geoaeo']);
 const WEIGHTS: Record<string, number> = {
   'agents-md': 15, 'agents-md-public-safe': 10, 'server-json': 15, mcp: 15,
   'offer-jsonld': 15, 'honest-offer': 10, 'llms-txt': 10, sitemap: 10,
+  // advanced ("world-class") web signals — na for CLI/dir targets, low weight
+  'well-known-agent': 5, openapi: 5, 'agents-page': 5,
 };
 const FIXES: Record<string, string> = {
   'agents-md': 'Add a public AGENTS.md at the target root or serve /agents.md as text/markdown.',
@@ -28,6 +33,9 @@ const FIXES: Record<string, string> = {
   'honest-offer': 'State the real price plainly. Remove scarcity, countdown, and urgency language.',
   'llms-txt': 'Publish /llms.txt with a concise product description.',
   sitemap: 'Publish /sitemap.xml for URL discovery.',
+  'well-known-agent': 'Publish /.well-known/agent.json (or agent-card.json) so agents can discover capabilities.',
+  openapi: 'Publish /openapi.json so agents have a machine-readable API reference.',
+  'agents-page': 'Publish an /agents page with agent-specific onboarding (self-serve key, sandbox, quickstart).',
 };
 
 function check(id: string, status: AuditStatus, note: string): AuditCheck { return { id, status, note, weight: WEIGHTS[id] }; }
@@ -120,7 +128,9 @@ async function directorySnapshot(directory: string): Promise<Snapshot> {
     home: { status: 200, contentType: 'text/plain', text: offerTexts.join('\n') },
     llms: { status: llmsFile ? 200 : 404, contentType: 'text/plain', text: await readText(llmsFile) },
     sitemap: { status: sitemapFile ? 200 : 404, contentType: 'application/xml', text: await readText(sitemapFile) },
-    honestText, hasMcp: Boolean(mcpFile || serverFile || hasMcpBin), networkFailure: false,
+    // advanced web signals are not meaningful for a repo directory — audited only for URL targets
+    wellKnown: { status: 404, contentType: '', text: '' }, openapi: { status: 404, contentType: '', text: '' }, agentsPage: { status: 404, contentType: '', text: '' },
+    honestText, hasMcp: Boolean(mcpFile || serverFile || hasMcpBin), networkFailure: false, isUrl: false,
   };
 }
 
@@ -133,12 +143,16 @@ async function fetchText(fetcher: typeof globalThis.fetch, url: string): Promise
 
 async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Promise<Snapshot> {
   const base = target.replace(/\/+$/, '');
-  const [agents, server, mcp, home, llms, sitemap] = await Promise.all([
+  const [agents, server, mcp, home, llms, sitemap, wellKnown, wellKnownCard, openapi, agentsPage] = await Promise.all([
     fetchText(fetcher, `${base}/agents.md`), fetchText(fetcher, `${base}/server.json`), fetchText(fetcher, `${base}/.well-known/mcp`),
     fetchText(fetcher, base), fetchText(fetcher, `${base}/llms.txt`), fetchText(fetcher, `${base}/sitemap.xml`),
+    fetchText(fetcher, `${base}/.well-known/agent.json`), fetchText(fetcher, `${base}/.well-known/agent-card.json`),
+    fetchText(fetcher, `${base}/openapi.json`), fetchText(fetcher, `${base}/agents`),
   ]);
   const endpoints = [agents, server, mcp, home, llms, sitemap];
-  return { agents, server, mcp, home, llms, sitemap, honestText: [home.text, offerBlock(agents.text)].join('\n'), hasMcp: server.status >= 200 && server.status < 400 || mcp.status >= 200 && mcp.status < 400, networkFailure: endpoints.every(item => item.status === 0) };
+  // either well-known agent manifest counts
+  const wk = ok(wellKnown.status) ? wellKnown : wellKnownCard;
+  return { agents, server, mcp, home, llms, sitemap, wellKnown: wk, openapi, agentsPage, honestText: [home.text, offerBlock(agents.text)].join('\n'), hasMcp: server.status >= 200 && server.status < 400 || mcp.status >= 200 && mcp.status < 400, networkFailure: endpoints.every(item => item.status === 0), isUrl: true };
 }
 
 function buildChecks(snapshot: Snapshot): AuditCheck[] {
@@ -153,6 +167,11 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
   const honestStatus: AuditStatus = !hasOffer(offerTexts) && !agentsPresent ? (snapshot.home.status === 0 ? 'warn' : 'na') : hasUrgency(snapshot.honestText) ? 'warn' : 'pass';
   const llmsStatus: AuditStatus = snapshot.llms.status === 0 ? 'warn' : snapshot.llms.status >= 200 && snapshot.llms.status < 400 && snapshot.llms.text.trim() ? 'pass' : 'fail';
   const sitemapStatus: AuditStatus = snapshot.sitemap.status === 0 ? 'warn' : snapshot.sitemap.status >= 200 && snapshot.sitemap.status < 400 && snapshot.sitemap.text.trim() ? 'pass' : 'fail';
+  // advanced world-class signals: only meaningful for a served web product (URL target)
+  const advanced = (endpoint: Endpoint): AuditStatus => !snapshot.isUrl || snapshot.networkFailure ? 'na' : ok(endpoint.status) ? 'pass' : 'warn';
+  const wellKnownStatus = advanced(snapshot.wellKnown);
+  const openapiStatus = advanced(snapshot.openapi);
+  const agentsPageStatus = advanced(snapshot.agentsPage);
   return [
     check('agents-md', agentsStatus, agentsPresent ? 'AGENTS.md is available.' : snapshot.agents.status === 0 ? 'The AGENTS.md request failed.' : 'AGENTS.md is missing.'),
     check('agents-md-public-safe', publicStatus, publicStatus === 'pass' ? 'AGENTS.md describes the product as a public surface.' : publicStatus === 'na' ? 'No AGENTS.md is available to inspect.' : 'AGENTS.md contains repository-internal guidance.'),
@@ -162,6 +181,9 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
     check('honest-offer', honestStatus, honestStatus === 'pass' ? 'Offer language states the price without pressure.' : honestStatus === 'na' ? 'No offer or Offer block was found.' : 'Offer language contains scarcity, countdown, or urgency copy.'),
     check('llms-txt', llmsStatus, llmsStatus === 'pass' ? 'llms.txt is available.' : llmsStatus === 'warn' ? 'The llms.txt request failed.' : 'llms.txt is missing.'),
     check('sitemap', sitemapStatus, sitemapStatus === 'pass' ? 'sitemap.xml is available.' : sitemapStatus === 'warn' ? 'The sitemap request failed.' : 'sitemap.xml is missing.'),
+    check('well-known-agent', wellKnownStatus, wellKnownStatus === 'pass' ? 'A .well-known agent manifest is available.' : wellKnownStatus === 'na' ? 'Not audited (no served web surface).' : 'No /.well-known/agent.json manifest was found.'),
+    check('openapi', openapiStatus, openapiStatus === 'pass' ? 'openapi.json is available.' : openapiStatus === 'na' ? 'Not audited (no served web surface).' : 'No /openapi.json was found.'),
+    check('agents-page', agentsPageStatus, agentsPageStatus === 'pass' ? 'An /agents page is available.' : agentsPageStatus === 'na' ? 'Not audited (no served web surface).' : 'No /agents onboarding page was found.'),
   ];
 }
 
