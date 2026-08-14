@@ -11,6 +11,6 @@ export function generateServerJson(config: AigentifyConfig): string {
     version: config.version ?? '0.1.0',
   };
   if (config.mcpUrl) server.remotes = [{ type: 'streamable-http', url: config.mcpUrl }];
-  else server.packages = [{ registry_type: 'npm', identifier: config.npmPackage ?? 'aigentify', version: config.version ?? '0.1.0', runtime_hint: 'npx', transport: { type: 'stdio' } }];
+  else server.packages = [{ registryType: 'npm', registryBaseUrl: 'https://registry.npmjs.org', identifier: config.npmPackage ?? 'aigentify', version: config.version ?? '0.1.0', transport: { type: 'stdio' }, runtimeHint: 'npx', packageArguments: [{ type: 'positional', valueHint: 'subcommand', value: 'mcp' }] }];
   return `${JSON.stringify(server, null, 2)}\n`;
 }

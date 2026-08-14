@@ -1,6 +1,7 @@
 {
   "name": "aigentify",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "mcpName": "io.github.pooriaarab/aigentify",
   "description": "Audit and generate agent-native product surfaces",
   "type": "module",
   "license": "MIT",
