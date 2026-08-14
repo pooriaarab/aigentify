@@ -1,0 +1,14 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.example/product",
+  "description": "An example agent product",
+  "repository": {"url": "https://github.com/example/product", "source": "github"},
+  "version": "1.0.0",
+  "packages": [{
+    "registry_type": "npm",
+    "identifier": "example-product",
+    "version": "1.0.0",
+    "runtime_hint": "npx",
+    "transport": {"type": "stdio"}
+  }]
+}
