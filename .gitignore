@@ -3,3 +3,7 @@ dist
 coverage
 _reference_geoaeo
 BUILD_BRIEF.md
+
+# local secrets — never commit
+.env
+.env.*
