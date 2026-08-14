@@ -63,11 +63,31 @@ describe('auditTarget', () => {
       if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
       if (url === `${base}/llms.txt`) return new Response('# Example product', {status: 200});
       if (url === `${base}/sitemap.xml`) return new Response('<urlset />', {status: 200});
+      if (url === `${base}/.well-known/agent.json`) return new Response('{"name":"Example"}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === `${base}/agents`) return new Response('<html>agents</html>', {status: 200, headers: {'content-type': 'text/html'}});
       return new Response('', {status: 404});
     };
     const report = await auditTarget(base, { fetch: fetcher });
     expect(report.score).toBe(100);
     expect(report.gaps).toEqual([]);
+  });
+
+  it('warns a table-stakes URL that lacks the world-class signals', async () => {
+    const base = 'https://plain.example';
+    const server = generate('server-json', { name: 'Plain', description: 'A plain agent product', repository: 'https://github.com/example/plain', npmPackage: 'plain', version: '1.0.0' });
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === `${base}/agents.md`) return new Response('# Plain\n\n## Offer\n\nPrice: USD 0', {status: 200, headers: {'content-type': 'text/markdown'}});
+      if (url === `${base}/server.json`) return new Response(server, {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === base) return new Response('<script type="application/ld+json">{"@type":"Offer","price":"0"}</script>', {status: 200, headers: {'content-type': 'text/html'}});
+      if (url === `${base}/llms.txt`) return new Response('# Plain', {status: 200});
+      if (url === `${base}/sitemap.xml`) return new Response('<urlset />', {status: 200});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(report.score).toBeLessThan(100);
+    expect(report.gaps.map(g => g.id)).toEqual(expect.arrayContaining(['well-known-agent', 'openapi', 'agents-page']));
   });
 });
 
