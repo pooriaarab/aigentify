@@ -54,23 +54,192 @@ describe('auditTarget', () => {
     const base = 'https://example.com';
     const server = generate('server-json', { name: 'Example product', description: 'An example agent product', repository: 'https://github.com/example/product', npmPackage: 'example-product', version: '1.0.0' });
     const agents = '# Example product\n\n## Offer\n\nPrice: USD 0';
-    const html = '<html><head><script type="application/ld+json">{"@type":"Offer","price":"0"}</script></head><body></body></html>';
-    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+    const orgJsonLd = '{"@context":"https://schema.org","@type":"Organization","name":"Example","contactPoint":{"@type":"ContactPoint","email":"support@example.com","contactType":"customer support"},"address":{"@type":"PostalAddress","addressCountry":"US"}}';
+    const homeText = 'Example product helps agents create, schedule, and publish content across every major platform from one API. '.repeat(8);
+    const html = `<html><head><script type="application/ld+json">{"@type":"Offer","price":"0"}</script><script type="application/ld+json">${orgJsonLd}</script></head><body><h1>Example product</h1><p>${homeText}</p></body></html>`;
+    const markdown = '# Example product\n\nCreate, schedule, and publish across platforms.';
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = String(input);
+      const accept = new Headers(init?.headers).get('accept') ?? '';
       if (url === `${base}/agents.md`) return new Response(agents, {status: 200, headers: {'content-type': 'text/markdown'}});
       if (url === `${base}/server.json`) return new Response(server, {status: 200, headers: {'content-type': 'application/json'}});
       if (url === `${base}/.well-known/mcp`) return new Response('', {status: 404});
+      if (url === base && /text\/markdown/.test(accept)) return new Response(markdown, {status: 200, headers: {'content-type': 'text/markdown', vary: 'Accept, Accept-Encoding'}});
       if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
       if (url === `${base}/llms.txt`) return new Response('# Example product', {status: 200});
       if (url === `${base}/sitemap.xml`) return new Response('<urlset />', {status: 200});
       if (url === `${base}/.well-known/agent.json`) return new Response('{"name":"Example"}', {status: 200, headers: {'content-type': 'application/json'}});
-      if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json', 'ratelimit-limit': '100', 'ratelimit-remaining': '99', 'ratelimit-reset': '60'}});
       if (url === `${base}/agents`) return new Response('<html>agents</html>', {status: 200, headers: {'content-type': 'text/html'}});
       return new Response('', {status: 404});
     };
     const report = await auditTarget(base, { fetch: fetcher });
     expect(report.score).toBe(100);
     expect(report.gaps).toEqual([]);
+    expect(check(report, 'soft-404').status).toBe('pass');
+    expect(check(report, 'markdown-negotiation').status).toBe('pass');
+    expect(check(report, 'org-schema').status).toBe('pass');
+    expect(check(report, 'rate-limit-headers').status).toBe('pass');
+  });
+
+  it('flags a soft-404 (unknown paths return 200)', async () => {
+    const base = 'https://soft.example';
+    const fetcher = async (): Promise<Response> =>
+      new Response('<html><body>app shell</body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'soft-404').status).toBe('fail');
+    expect(report.gaps.some(gap => gap.id === 'soft-404')).toBe(true);
+  });
+
+  it('does not pass content-without-js or org-schema off a broken homepage', async () => {
+    const base = 'https://broken.example';
+    const richErrorPage = `<html><body><h1>Something went wrong</h1><p>${'Sorry, an unexpected error occurred while loading this page. '.repeat(10)}</p><script type="application/ld+json">{"@type":"Organization","contactPoint":{"email":"a@b.com"},"address":{"addressCountry":"US"}}</script></body></html>`;
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response(richErrorPage, {status: 500, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'content-without-js').status).toBe('warn');
+    expect(check(report, 'org-schema').status).toBe('warn');
+  });
+
+  it('only passes soft-404 on a real 404/410, not other error statuses', async () => {
+    const base = 'https://blocked.example';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response('<html><body><h1>Home</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('Forbidden', {status: 403});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'soft-404').status).toBe('warn');
+  });
+
+  it('does not count an h1 hidden inside a script as server-rendered content', async () => {
+    const base = 'https://spa.example';
+    const text = 'Loading placeholder text that is not real page content and should not count. '.repeat(8);
+    const html = `<html><body><p>${text}</p><script>window.__STATE__ = ${JSON.stringify('<h1>Hydrated title</h1>')}</script></body></html>`;
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'content-without-js').status).toBe('warn');
+  });
+
+  it('passes org-schema when any Organization block (not just the first) has contactPoint and address', async () => {
+    const base = 'https://multi-schema.example';
+    const html = '<html><head>' +
+      '<script type="application/ld+json">{"@type":"Organization","name":"Widget Co"}</script>' +
+      '<script type="application/ld+json">{"@type":"Organization","contactPoint":{"email":"a@b.com"},"address":{"addressCountry":"US"}}</script>' +
+      '</head><body></body></html>';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'org-schema').status).toBe('pass');
+  });
+
+  it('does not pass markdown-negotiation when the negotiated request errors', async () => {
+    const base = 'https://markdown-error.example';
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      const accept = new Headers(init?.headers).get('accept') ?? '';
+      if (url === base && /text\/markdown/.test(accept)) {
+        return new Response('Not Found', {status: 404, headers: {'content-type': 'text/markdown', vary: 'Accept'}});
+      }
+      if (url === base) return new Response('<html><body><h1>Home</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'markdown-negotiation').status).toBe('warn');
+  });
+
+  it('does not pass rate-limit-headers from a single header on an unrelated failed endpoint', async () => {
+    const base = 'https://ratelimit-partial.example';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response('<html><body><h1>Home</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404, headers: {'ratelimit-limit': '100'}});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'rate-limit-headers').status).toBe('warn');
+  });
+
+  it('does not pass crawler-reachable when the agent User-Agent hits a block page', async () => {
+    const base = 'https://waf.example';
+    const homeHtml = `<html><body><h1>Home</h1><p>${'Real homepage content for humans and well-behaved crawlers alike. '.repeat(10)}</p></body></html>`;
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      const userAgent = new Headers(init?.headers).get('user-agent') ?? '';
+      if (url === base && /ora-agent/.test(userAgent)) {
+        return new Response('<html><body>Access Denied - are you a robot?</body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      }
+      if (url === base) return new Response(homeHtml, {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'crawler-reachable').status).toBe('warn');
+  });
+
+  it('does not count h1 and text hidden inside an HTML comment as server-rendered content', async () => {
+    const base = 'https://commented-out.example';
+    const hiddenText = 'This text is commented out and never rendered by a browser or crawler. '.repeat(8);
+    const html = `<html><body><!-- <h1>Hidden title</h1><p>${hiddenText}</p> --></body></html>`;
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'content-without-js').status).toBe('warn');
+  });
+
+  it('does not pass org-schema when contactPoint and address are present but null', async () => {
+    const base = 'https://null-schema.example';
+    const html = '<html><head><script type="application/ld+json">{"@type":"Organization","contactPoint":null,"address":null}</script></head><body></body></html>';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'org-schema').status).toBe('warn');
+  });
+
+  it('does not pass crawler-reachable off an empty 200 when there is no homepage baseline', async () => {
+    const base = 'https://no-baseline.example';
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      const userAgent = new Headers(init?.headers).get('user-agent') ?? '';
+      if (url === base && /ora-agent/.test(userAgent)) return new Response('', {status: 200, headers: {'content-type': 'text/html'}});
+      if (url === base) return new Response('', {status: 500});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'crawler-reachable').status).toBe('warn');
+  });
+
+  it('does not pass rate-limit-headers when RateLimit-Reset is missing', async () => {
+    const base = 'https://ratelimit-no-reset.example';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response('<html><body><h1>Home</h1></body></html>', {status: 200, headers: {'content-type': 'text/html', 'ratelimit-limit': '100', 'ratelimit-remaining': '99'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'rate-limit-headers').status).toBe('warn');
+  });
+
+  it('marks the is-agentic-parity signals na for a directory target', async () => {
+    const report = await auditTarget(path.join(fixtures, 'good'));
+    for (const id of ['soft-404', 'markdown-negotiation', 'content-without-js', 'org-schema', 'crawler-reachable', 'rate-limit-headers']) {
+      expect(check(report, id).status).toBe('na');
+    }
+    expect(report.score).toBe(100);
   });
 
   it('warns a table-stakes URL that lacks the world-class signals', async () => {

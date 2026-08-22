@@ -1,18 +1,40 @@
 {
   "name": "aigentify",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "mcpName": "io.github.pooriaarab/aigentify",
   "description": "Audit and generate agent-native product surfaces",
   "type": "module",
   "license": "MIT",
-  "bin": {"aigentify": "dist/cli.js", "aigentify-mcp": "dist/mcp.js"},
-  "exports": {".": {"types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs"}},
-  "files": ["dist"],
-  "repository": {"type": "git", "url": "git+https://github.com/pooriaarab/aigentify.git"},
+  "bin": {
+    "aigentify": "dist/cli.js",
+    "aigentify-mcp": "dist/mcp.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pooriaarab/aigentify.git"
+  },
   "homepage": "https://github.com/pooriaarab/aigentify",
   "bugs": "https://github.com/pooriaarab/aigentify/issues",
-  "keywords": ["agents", "agentification", "mcp", "ai", "json-ld"],
-  "publishConfig": {"access": "public"},
+  "keywords": [
+    "agents",
+    "agentification",
+    "mcp",
+    "ai",
+    "json-ld"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
@@ -21,7 +43,9 @@
     "verify": "npm run typecheck && npm run build && npm run test",
     "prepublishOnly": "npm run verify"
   },
-  "engines": {"node": ">=20"},
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.5",
     "cheerio": "^1.1.2",
