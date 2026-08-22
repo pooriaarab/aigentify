@@ -62,7 +62,8 @@ Web (URL targets): `well-known-agent`, `openapi`, `agents-page`, `soft-404`
 `content-without-js` (an `<h1>` and 500+ characters without JS), `org-schema`
 (Organization JSON-LD with `contactPoint` and `address`), `crawler-reachable`
 (agent User-Agents can reach the homepage), and `rate-limit-headers` (standard
-`RateLimit-*` headers).
+`RateLimit-*` headers), plus `auth-md`, `api-catalog` (RFC 9727),
+`agent-card-a2a` (A2A), `link-headers` (RFC 8288), and `markdown-alt`.
 
 ## Configuration
 

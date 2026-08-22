@@ -4,7 +4,7 @@
 
 ## Product
 
-aigentify checks a local product directory or live URL. It reports gaps in public agent instructions, MCP discovery, Offer JSON-LD, llms.txt, and sitemap.xml. For live URLs it also checks agent reachability, real HTTP 404s (not soft-404 app shells), markdown content negotiation, server-rendered content, Organization schema (contactPoint + address), an openapi.json, an /agents page, and standard rate-limit headers.
+aigentify checks a local product directory or live URL. It reports gaps in public agent instructions, MCP discovery, Offer JSON-LD, llms.txt, sitemap.xml, /auth.md, /.well-known/api-catalog, A2A agent-card, Link headers, and markdown alternates. For live URLs it also checks agent reachability, real HTTP 404s (not soft-404 app shells), markdown content negotiation, server-rendered content, Organization schema (contactPoint + address), an openapi.json, an /agents page, and standard rate-limit headers.
 
 ## Interfaces
 
