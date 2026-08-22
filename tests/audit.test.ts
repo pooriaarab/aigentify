@@ -54,23 +54,48 @@ describe('auditTarget', () => {
     const base = 'https://example.com';
     const server = generate('server-json', { name: 'Example product', description: 'An example agent product', repository: 'https://github.com/example/product', npmPackage: 'example-product', version: '1.0.0' });
     const agents = '# Example product\n\n## Offer\n\nPrice: USD 0';
-    const html = '<html><head><script type="application/ld+json">{"@type":"Offer","price":"0"}</script></head><body></body></html>';
-    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+    const orgJsonLd = '{"@context":"https://schema.org","@type":"Organization","name":"Example","contactPoint":{"@type":"ContactPoint","email":"support@example.com","contactType":"customer support"},"address":{"@type":"PostalAddress","addressCountry":"US"}}';
+    const homeText = 'Example product helps agents create, schedule, and publish content across every major platform from one API. '.repeat(8);
+    const html = `<html><head><script type="application/ld+json">{"@type":"Offer","price":"0"}</script><script type="application/ld+json">${orgJsonLd}</script></head><body><h1>Example product</h1><p>${homeText}</p></body></html>`;
+    const markdown = '# Example product\n\nCreate, schedule, and publish across platforms.';
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = String(input);
+      const accept = new Headers(init?.headers).get('accept') ?? '';
       if (url === `${base}/agents.md`) return new Response(agents, {status: 200, headers: {'content-type': 'text/markdown'}});
       if (url === `${base}/server.json`) return new Response(server, {status: 200, headers: {'content-type': 'application/json'}});
       if (url === `${base}/.well-known/mcp`) return new Response('', {status: 404});
+      if (url === base && /text\/markdown/.test(accept)) return new Response(markdown, {status: 200, headers: {'content-type': 'text/markdown', vary: 'Accept, Accept-Encoding'}});
       if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
       if (url === `${base}/llms.txt`) return new Response('# Example product', {status: 200});
       if (url === `${base}/sitemap.xml`) return new Response('<urlset />', {status: 200});
       if (url === `${base}/.well-known/agent.json`) return new Response('{"name":"Example"}', {status: 200, headers: {'content-type': 'application/json'}});
-      if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json', 'ratelimit-limit': '100'}});
       if (url === `${base}/agents`) return new Response('<html>agents</html>', {status: 200, headers: {'content-type': 'text/html'}});
       return new Response('', {status: 404});
     };
     const report = await auditTarget(base, { fetch: fetcher });
     expect(report.score).toBe(100);
     expect(report.gaps).toEqual([]);
+    expect(check(report, 'soft-404').status).toBe('pass');
+    expect(check(report, 'markdown-negotiation').status).toBe('pass');
+    expect(check(report, 'org-schema').status).toBe('pass');
+  });
+
+  it('flags a soft-404 (unknown paths return 200)', async () => {
+    const base = 'https://soft.example';
+    const fetcher = async (): Promise<Response> =>
+      new Response('<html><body>app shell</body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'soft-404').status).toBe('fail');
+    expect(report.gaps.some(gap => gap.id === 'soft-404')).toBe(true);
+  });
+
+  it('marks the is-agentic-parity signals na for a directory target', async () => {
+    const report = await auditTarget(path.join(fixtures, 'good'));
+    for (const id of ['soft-404', 'markdown-negotiation', 'content-without-js', 'org-schema', 'crawler-reachable', 'rate-limit-headers']) {
+      expect(check(report, id).status).toBe('na');
+    }
+    expect(report.score).toBe(100);
   });
 
   it('warns a table-stakes URL that lacks the world-class signals', async () => {

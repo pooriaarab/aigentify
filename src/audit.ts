@@ -8,10 +8,12 @@ export interface AuditGap { id: string; note: string; fix: string }
 export interface AuditReport { target: string; score: number; checks: AuditCheck[]; gaps: AuditGap[] }
 export interface AuditOptions { fetch?: typeof globalThis.fetch }
 
-interface Endpoint { status: number; contentType: string; text: string }
+interface Endpoint { status: number; contentType: string; text: string; headers?: Record<string, string> }
 interface Snapshot {
   agents: Endpoint; server: Endpoint; mcp: Endpoint; home: Endpoint; llms: Endpoint; sitemap: Endpoint;
   wellKnown: Endpoint; openapi: Endpoint; agentsPage: Endpoint;
+  // is-agentic-parity signals (URL targets only)
+  notFound: Endpoint; homeMarkdown: Endpoint; homeAsAgent: Endpoint;
   honestText: string; hasMcp: boolean; networkFailure: boolean; isUrl: boolean;
 }
 
@@ -23,6 +25,9 @@ const WEIGHTS: Record<string, number> = {
   'offer-jsonld': 15, 'honest-offer': 10, 'llms-txt': 10, sitemap: 10,
   // advanced ("world-class") web signals — na for CLI/dir targets, low weight
   'well-known-agent': 5, openapi: 5, 'agents-page': 5,
+  // is-agentic-parity web signals — na for CLI/dir targets, low weight
+  'soft-404': 5, 'markdown-negotiation': 5, 'content-without-js': 5,
+  'org-schema': 5, 'crawler-reachable': 5, 'rate-limit-headers': 5,
 };
 const FIXES: Record<string, string> = {
   'agents-md': 'Add a public AGENTS.md at the target root or serve /agents.md as text/markdown.',
@@ -36,6 +41,12 @@ const FIXES: Record<string, string> = {
   'well-known-agent': 'Publish /.well-known/agent.json (or agent-card.json) so agents can discover capabilities.',
   openapi: 'Publish /openapi.json so agents have a machine-readable API reference.',
   'agents-page': 'Publish an /agents page with agent-specific onboarding (self-serve key, sandbox, quickstart).',
+  'soft-404': 'Return a real HTTP 404 (or 410) for unknown paths — never a 200 with your app shell, which tells agents every path exists.',
+  'markdown-negotiation': 'Serve text/markdown on `Accept: text/markdown` and add `Accept` to the Vary header (Vary: Accept, Accept-Encoding) so CDNs key the variants apart.',
+  'content-without-js': 'Server-side render the homepage so crawlers without JS see an <h1> and 500+ characters of real text.',
+  'org-schema': 'Add Organization JSON-LD with both contactPoint (email/phone + contactType) and address (PostalAddress).',
+  'crawler-reachable': 'Let major agent User-Agents (GPTBot, ClaudeBot, ora-agent, ...) reach the homepage. Narrow WAF/bot rules that block them.',
+  'rate-limit-headers': 'Return standard RateLimit-Limit/RateLimit-Remaining/RateLimit-Reset headers (plus Retry-After on 429) so agents can self-throttle.',
 };
 
 function check(id: string, status: AuditStatus, note: string): AuditCheck { return { id, status, note, weight: WEIGHTS[id] }; }
@@ -130,29 +141,62 @@ async function directorySnapshot(directory: string): Promise<Snapshot> {
     sitemap: { status: sitemapFile ? 200 : 404, contentType: 'application/xml', text: await readText(sitemapFile) },
     // advanced web signals are not meaningful for a repo directory — audited only for URL targets
     wellKnown: { status: 404, contentType: '', text: '' }, openapi: { status: 404, contentType: '', text: '' }, agentsPage: { status: 404, contentType: '', text: '' },
+    notFound: { status: 404, contentType: '', text: '' }, homeMarkdown: { status: 404, contentType: '', text: '' }, homeAsAgent: { status: 404, contentType: '', text: '' },
     honestText, hasMcp: Boolean(mcpFile || serverFile || hasMcpBin), networkFailure: false, isUrl: false,
   };
 }
 
-async function fetchText(fetcher: typeof globalThis.fetch, url: string): Promise<Endpoint> {
+async function fetchText(fetcher: typeof globalThis.fetch, url: string, init?: RequestInit): Promise<Endpoint> {
   try {
-    const response = await fetcher(url, { signal: AbortSignal.timeout(8000) });
-    return { status: response.status, contentType: response.headers.get('content-type') ?? '', text: await response.text() };
-  } catch { return { status: 0, contentType: '', text: '' }; }
+    const response = await fetcher(url, { signal: AbortSignal.timeout(8000), ...init });
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, key) => { headers[key.toLowerCase()] = value; });
+    return { status: response.status, contentType: response.headers.get('content-type') ?? '', text: await response.text(), headers };
+  } catch { return { status: 0, contentType: '', text: '', headers: {} }; }
 }
 
 async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Promise<Snapshot> {
   const base = target.replace(/\/+$/, '');
-  const [agents, server, mcp, home, llms, sitemap, wellKnown, wellKnownCard, openapi, agentsPage] = await Promise.all([
+  // A path no real site serves — used to detect soft-404s (200 + app shell).
+  const missingPath = `${base}/aigentify-probe-${'x'.repeat(8)}-404`;
+  const [agents, server, mcp, home, llms, sitemap, wellKnown, wellKnownCard, openapi, agentsPage,
+    notFound, homeMarkdown, homeAsAgent] = await Promise.all([
     fetchText(fetcher, `${base}/agents.md`), fetchText(fetcher, `${base}/server.json`), fetchText(fetcher, `${base}/.well-known/mcp`),
     fetchText(fetcher, base), fetchText(fetcher, `${base}/llms.txt`), fetchText(fetcher, `${base}/sitemap.xml`),
     fetchText(fetcher, `${base}/.well-known/agent.json`), fetchText(fetcher, `${base}/.well-known/agent-card.json`),
     fetchText(fetcher, `${base}/openapi.json`), fetchText(fetcher, `${base}/agents`),
+    fetchText(fetcher, missingPath),
+    fetchText(fetcher, base, { headers: { accept: 'text/markdown' } }),
+    fetchText(fetcher, base, { headers: { 'user-agent': 'ora-agent' } }),
   ]);
   const endpoints = [agents, server, mcp, home, llms, sitemap];
   // either well-known agent manifest counts
   const wk = ok(wellKnown.status) ? wellKnown : wellKnownCard;
-  return { agents, server, mcp, home, llms, sitemap, wellKnown: wk, openapi, agentsPage, honestText: [home.text, offerBlock(agents.text)].join('\n'), hasMcp: server.status >= 200 && server.status < 400 || mcp.status >= 200 && mcp.status < 400, networkFailure: endpoints.every(item => item.status === 0), isUrl: true };
+  return { agents, server, mcp, home, llms, sitemap, wellKnown: wk, openapi, agentsPage,
+    notFound, homeMarkdown, homeAsAgent,
+    honestText: [home.text, offerBlock(agents.text)].join('\n'), hasMcp: server.status >= 200 && server.status < 400 || mcp.status >= 200 && mcp.status < 400, networkFailure: endpoints.every(item => item.status === 0), isUrl: true };
+}
+
+function looksMarkdown(endpoint: Endpoint): boolean {
+  const varyAccept = /(^|,)\s*accept\s*($|,)/i.test(endpoint.headers?.vary ?? '');
+  return /text\/markdown/i.test(endpoint.contentType) && varyAccept;
+}
+
+function hasBodyContent(html: string): boolean {
+  const hasH1 = /<h1[\s>]/i.test(html);
+  const textOnly = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return hasH1 && textOnly.length >= 500;
+}
+
+function orgSchemaStatus(html: string): 'pass' | 'warn' {
+  const blocks = [...html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]);
+  const org = blocks.find(block => /"@type"\s*:\s*"Organization"/i.test(block));
+  if (!org) return 'warn';
+  return /"contactPoint"/i.test(org) && /"address"/i.test(org) ? 'pass' : 'warn';
+}
+
+function hasRateLimitHeaders(endpoints: Endpoint[]): boolean {
+  return endpoints.some(endpoint => Object.keys(endpoint.headers ?? {}).some(key => /^(x-)?ratelimit-limit$/i.test(key)));
 }
 
 function buildChecks(snapshot: Snapshot): AuditCheck[] {
@@ -172,6 +216,14 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
   const wellKnownStatus = advanced(snapshot.wellKnown);
   const openapiStatus = advanced(snapshot.openapi);
   const agentsPageStatus = advanced(snapshot.agentsPage);
+  // is-agentic-parity signals: URL-only. na for directories or total network failure.
+  const urlOnly = snapshot.isUrl && !snapshot.networkFailure;
+  const soft404Status: AuditStatus = !urlOnly ? 'na' : snapshot.notFound.status === 0 ? 'warn' : ok(snapshot.notFound.status) ? 'fail' : 'pass';
+  const markdownStatus: AuditStatus = !urlOnly ? 'na' : looksMarkdown(snapshot.homeMarkdown) ? 'pass' : 'warn';
+  const contentStatus: AuditStatus = !urlOnly ? 'na' : snapshot.home.status === 0 ? 'warn' : hasBodyContent(snapshot.home.text) ? 'pass' : 'warn';
+  const orgStatus: AuditStatus = !urlOnly ? 'na' : snapshot.home.status === 0 ? 'warn' : orgSchemaStatus(snapshot.home.text);
+  const crawlerStatus: AuditStatus = !urlOnly ? 'na' : ok(snapshot.homeAsAgent.status) ? 'pass' : 'warn';
+  const rateLimitStatus: AuditStatus = !urlOnly ? 'na' : hasRateLimitHeaders([snapshot.openapi, snapshot.server, snapshot.home]) ? 'pass' : 'warn';
   return [
     check('agents-md', agentsStatus, agentsPresent ? 'AGENTS.md is available.' : snapshot.agents.status === 0 ? 'The AGENTS.md request failed.' : 'AGENTS.md is missing.'),
     check('agents-md-public-safe', publicStatus, publicStatus === 'pass' ? 'AGENTS.md describes the product as a public surface.' : publicStatus === 'na' ? 'No AGENTS.md is available to inspect.' : 'AGENTS.md contains repository-internal guidance.'),
@@ -184,6 +236,12 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
     check('well-known-agent', wellKnownStatus, wellKnownStatus === 'pass' ? 'A .well-known agent manifest is available.' : wellKnownStatus === 'na' ? 'Not audited (no served web surface).' : 'No /.well-known/agent.json manifest was found.'),
     check('openapi', openapiStatus, openapiStatus === 'pass' ? 'openapi.json is available.' : openapiStatus === 'na' ? 'Not audited (no served web surface).' : 'No /openapi.json was found.'),
     check('agents-page', agentsPageStatus, agentsPageStatus === 'pass' ? 'An /agents page is available.' : agentsPageStatus === 'na' ? 'Not audited (no served web surface).' : 'No /agents onboarding page was found.'),
+    check('soft-404', soft404Status, soft404Status === 'pass' ? 'Unknown paths return a real 404.' : soft404Status === 'na' ? 'Not audited (no served web surface).' : soft404Status === 'warn' ? 'The 404 probe request failed.' : 'Unknown paths return 200 with the app shell (soft-404).'),
+    check('markdown-negotiation', markdownStatus, markdownStatus === 'pass' ? 'The homepage serves text/markdown with Vary: Accept.' : markdownStatus === 'na' ? 'Not audited (no served web surface).' : 'The homepage does not serve markdown on Accept: text/markdown with a Vary: Accept header.'),
+    check('content-without-js', contentStatus, contentStatus === 'pass' ? 'The homepage renders an H1 and substantial text without JS.' : contentStatus === 'na' ? 'Not audited (no served web surface).' : 'The homepage lacks an H1 or enough server-rendered text.'),
+    check('org-schema', orgStatus, orgStatus === 'pass' ? 'Organization JSON-LD includes contactPoint and address.' : orgStatus === 'na' ? 'Not audited (no served web surface).' : 'Organization JSON-LD is missing or lacks contactPoint/address.'),
+    check('crawler-reachable', crawlerStatus, crawlerStatus === 'pass' ? 'The homepage is reachable by an agent User-Agent.' : crawlerStatus === 'na' ? 'Not audited (no served web surface).' : 'An agent User-Agent could not reach the homepage.'),
+    check('rate-limit-headers', rateLimitStatus, rateLimitStatus === 'pass' ? 'Standard rate-limit headers are present.' : rateLimitStatus === 'na' ? 'Not audited (no served web surface).' : 'No RateLimit-* headers were found on probed endpoints.'),
   ];
 }
 

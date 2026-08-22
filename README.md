@@ -48,6 +48,22 @@ The MCP server exposes `audit` with `{ target }` and `gen` with `{ artifact, par
 
 Artifacts are `agents-md`, `server-json`, `offer`, and `agents-route`.
 
+## Checks
+
+`audit` scores these signals. The core signals work for a directory or a URL; the
+web signals are only meaningful for a served URL and are marked `na` otherwise.
+
+Core: `agents-md`, `agents-md-public-safe`, `server-json`, `mcp`, `offer-jsonld`,
+`honest-offer`, `llms-txt`, `sitemap`.
+
+Web (URL targets): `well-known-agent`, `openapi`, `agents-page`, `soft-404`
+(unknown paths must return a real 404, not a 200 app shell), `markdown-negotiation`
+(serve `text/markdown` on `Accept: text/markdown` with `Vary: Accept`),
+`content-without-js` (an `<h1>` and 500+ characters without JS), `org-schema`
+(Organization JSON-LD with `contactPoint` and `address`), `crawler-reachable`
+(agent User-Agents can reach the homepage), and `rate-limit-headers` (standard
+`RateLimit-*` headers).
+
 ## Configuration
 
 Add an optional `aigentify.config.ts`, `aigentify.config.js`, or `aigentify.config.mjs` file. Export `defineConfig(...)` data as the default export or as `aigentifyConfig`.
