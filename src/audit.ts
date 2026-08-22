@@ -183,16 +183,17 @@ function looksMarkdown(endpoint: Endpoint): boolean {
 }
 
 function hasBodyContent(html: string): boolean {
-  const hasH1 = /<h1[\s>]/i.test(html);
-  const textOnly = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  const stripped = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+  const hasH1 = /<h1[\s>]/i.test(stripped);
+  const textOnly = stripped.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
   return hasH1 && textOnly.length >= 500;
 }
 
 function orgSchemaStatus(html: string): 'pass' | 'warn' {
   const blocks = [...html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]);
-  const org = blocks.find(block => /"@type"\s*:\s*"Organization"/i.test(block));
-  if (!org) return 'warn';
-  return /"contactPoint"/i.test(org) && /"address"/i.test(org) ? 'pass' : 'warn';
+  const orgBlocks = blocks.filter(block => /"@type"\s*:\s*"Organization"/i.test(block));
+  if (!orgBlocks.length) return 'warn';
+  return orgBlocks.some(block => /"contactPoint"/i.test(block) && /"address"/i.test(block)) ? 'pass' : 'warn';
 }
 
 function hasRateLimitHeaders(endpoints: Endpoint[]): boolean {
@@ -218,10 +219,13 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
   const agentsPageStatus = advanced(snapshot.agentsPage);
   // is-agentic-parity signals: URL-only. na for directories or total network failure.
   const urlOnly = snapshot.isUrl && !snapshot.networkFailure;
-  const soft404Status: AuditStatus = !urlOnly ? 'na' : snapshot.notFound.status === 0 ? 'warn' : ok(snapshot.notFound.status) ? 'fail' : 'pass';
+  const soft404Status: AuditStatus = !urlOnly ? 'na'
+    : snapshot.notFound.status === 404 || snapshot.notFound.status === 410 ? 'pass'
+    : ok(snapshot.notFound.status) ? 'fail'
+    : 'warn';
   const markdownStatus: AuditStatus = !urlOnly ? 'na' : looksMarkdown(snapshot.homeMarkdown) ? 'pass' : 'warn';
-  const contentStatus: AuditStatus = !urlOnly ? 'na' : snapshot.home.status === 0 ? 'warn' : hasBodyContent(snapshot.home.text) ? 'pass' : 'warn';
-  const orgStatus: AuditStatus = !urlOnly ? 'na' : snapshot.home.status === 0 ? 'warn' : orgSchemaStatus(snapshot.home.text);
+  const contentStatus: AuditStatus = !urlOnly ? 'na' : !ok(snapshot.home.status) ? 'warn' : hasBodyContent(snapshot.home.text) ? 'pass' : 'warn';
+  const orgStatus: AuditStatus = !urlOnly ? 'na' : !ok(snapshot.home.status) ? 'warn' : orgSchemaStatus(snapshot.home.text);
   const crawlerStatus: AuditStatus = !urlOnly ? 'na' : ok(snapshot.homeAsAgent.status) ? 'pass' : 'warn';
   const rateLimitStatus: AuditStatus = !urlOnly ? 'na' : hasRateLimitHeaders([snapshot.openapi, snapshot.server, snapshot.home]) ? 'pass' : 'warn';
   return [
@@ -236,7 +240,7 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
     check('well-known-agent', wellKnownStatus, wellKnownStatus === 'pass' ? 'A .well-known agent manifest is available.' : wellKnownStatus === 'na' ? 'Not audited (no served web surface).' : 'No /.well-known/agent.json manifest was found.'),
     check('openapi', openapiStatus, openapiStatus === 'pass' ? 'openapi.json is available.' : openapiStatus === 'na' ? 'Not audited (no served web surface).' : 'No /openapi.json was found.'),
     check('agents-page', agentsPageStatus, agentsPageStatus === 'pass' ? 'An /agents page is available.' : agentsPageStatus === 'na' ? 'Not audited (no served web surface).' : 'No /agents onboarding page was found.'),
-    check('soft-404', soft404Status, soft404Status === 'pass' ? 'Unknown paths return a real 404.' : soft404Status === 'na' ? 'Not audited (no served web surface).' : soft404Status === 'warn' ? 'The 404 probe request failed.' : 'Unknown paths return 200 with the app shell (soft-404).'),
+    check('soft-404', soft404Status, soft404Status === 'pass' ? 'Unknown paths return a real 404.' : soft404Status === 'na' ? 'Not audited (no served web surface).' : soft404Status === 'warn' ? 'The 404 probe was inconclusive (no response, or a non-404/410 error status).' : 'Unknown paths return 200 with the app shell (soft-404).'),
     check('markdown-negotiation', markdownStatus, markdownStatus === 'pass' ? 'The homepage serves text/markdown with Vary: Accept.' : markdownStatus === 'na' ? 'Not audited (no served web surface).' : 'The homepage does not serve markdown on Accept: text/markdown with a Vary: Accept header.'),
     check('content-without-js', contentStatus, contentStatus === 'pass' ? 'The homepage renders an H1 and substantial text without JS.' : contentStatus === 'na' ? 'Not audited (no served web surface).' : 'The homepage lacks an H1 or enough server-rendered text.'),
     check('org-schema', orgStatus, orgStatus === 'pass' ? 'Organization JSON-LD includes contactPoint and address.' : orgStatus === 'na' ? 'Not audited (no served web surface).' : 'Organization JSON-LD is missing or lacks contactPoint/address.'),

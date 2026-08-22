@@ -90,6 +90,58 @@ describe('auditTarget', () => {
     expect(report.gaps.some(gap => gap.id === 'soft-404')).toBe(true);
   });
 
+  it('does not pass content-without-js or org-schema off a broken homepage', async () => {
+    const base = 'https://broken.example';
+    const richErrorPage = `<html><body><h1>Something went wrong</h1><p>${'Sorry, an unexpected error occurred while loading this page. '.repeat(10)}</p><script type="application/ld+json">{"@type":"Organization","contactPoint":{"email":"a@b.com"},"address":{"addressCountry":"US"}}</script></body></html>`;
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response(richErrorPage, {status: 500, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'content-without-js').status).toBe('warn');
+    expect(check(report, 'org-schema').status).toBe('warn');
+  });
+
+  it('only passes soft-404 on a real 404/410, not other error statuses', async () => {
+    const base = 'https://blocked.example';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response('<html><body><h1>Home</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('Forbidden', {status: 403});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'soft-404').status).toBe('warn');
+  });
+
+  it('does not count an h1 hidden inside a script as server-rendered content', async () => {
+    const base = 'https://spa.example';
+    const text = 'Loading placeholder text that is not real page content and should not count. '.repeat(8);
+    const html = `<html><body><p>${text}</p><script>window.__STATE__ = ${JSON.stringify('<h1>Hydrated title</h1>')}</script></body></html>`;
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'content-without-js').status).toBe('warn');
+  });
+
+  it('passes org-schema when any Organization block (not just the first) has contactPoint and address', async () => {
+    const base = 'https://multi-schema.example';
+    const html = '<html><head>' +
+      '<script type="application/ld+json">{"@type":"Organization","name":"Widget Co"}</script>' +
+      '<script type="application/ld+json">{"@type":"Organization","contactPoint":{"email":"a@b.com"},"address":{"addressCountry":"US"}}</script>' +
+      '</head><body></body></html>';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'org-schema').status).toBe('pass');
+  });
+
   it('marks the is-agentic-parity signals na for a directory target', async () => {
     const report = await auditTarget(path.join(fixtures, 'good'));
     for (const id of ['soft-404', 'markdown-negotiation', 'content-without-js', 'org-schema', 'crawler-reachable', 'rate-limit-headers']) {
