@@ -56,8 +56,10 @@ describe('auditTarget', () => {
     const agents = '# Example product\n\n## Offer\n\nPrice: USD 0';
     const orgJsonLd = '{"@context":"https://schema.org","@type":"Organization","name":"Example","contactPoint":{"@type":"ContactPoint","email":"support@example.com","contactType":"customer support"},"address":{"@type":"PostalAddress","addressCountry":"US"}}';
     const homeText = 'Example product helps agents create, schedule, and publish content across every major platform from one API. '.repeat(8);
-    const html = `<html><head><script type="application/ld+json">{"@type":"Offer","price":"0"}</script><script type="application/ld+json">${orgJsonLd}</script></head><body><h1>Example product</h1><p>${homeText}</p></body></html>`;
+    const mdAlt = '<link rel="alternate" type="text/markdown" href="/home.md">';
+    const html = `<html><head>${mdAlt}<script type="application/ld+json">{"@type":"Offer","price":"0"}</script><script type="application/ld+json">${orgJsonLd}</script></head><body><h1>Example product</h1><p>${homeText}</p></body></html>`;
     const markdown = '# Example product\n\nCreate, schedule, and publish across platforms.';
+    const linkHeader = '</llms.txt>; rel="describedby", </openapi.json>; rel="service-desc"';
     const fetcher = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = String(input);
       const accept = new Headers(init?.headers).get('accept') ?? '';
@@ -65,10 +67,13 @@ describe('auditTarget', () => {
       if (url === `${base}/server.json`) return new Response(server, {status: 200, headers: {'content-type': 'application/json'}});
       if (url === `${base}/.well-known/mcp`) return new Response('', {status: 404});
       if (url === base && /text\/markdown/.test(accept)) return new Response(markdown, {status: 200, headers: {'content-type': 'text/markdown', vary: 'Accept, Accept-Encoding'}});
-      if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html'}});
+      if (url === base) return new Response(html, {status: 200, headers: {'content-type': 'text/html', link: linkHeader}});
       if (url === `${base}/llms.txt`) return new Response('# Example product', {status: 200});
       if (url === `${base}/sitemap.xml`) return new Response('<urlset />', {status: 200});
       if (url === `${base}/.well-known/agent.json`) return new Response('{"name":"Example"}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === `${base}/.well-known/agent-card.json`) return new Response(`{"name":"Example","url":"${base}"}`, {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === `${base}/.well-known/api-catalog`) return new Response('{"linkset":[{"anchor":"/api","service-desc":[{"href":"/openapi.json"}]}]}', {status: 200, headers: {'content-type': 'application/linkset+json'}});
+      if (url === `${base}/auth.md`) return new Response('# Auth\n\nUse a Bearer API key.', {status: 200, headers: {'content-type': 'text/markdown'}});
       if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json', 'ratelimit-limit': '100', 'ratelimit-remaining': '99', 'ratelimit-reset': '60'}});
       if (url === `${base}/agents`) return new Response('<html>agents</html>', {status: 200, headers: {'content-type': 'text/html'}});
       return new Response('', {status: 404});
@@ -80,6 +85,11 @@ describe('auditTarget', () => {
     expect(check(report, 'markdown-negotiation').status).toBe('pass');
     expect(check(report, 'org-schema').status).toBe('pass');
     expect(check(report, 'rate-limit-headers').status).toBe('pass');
+    expect(check(report, 'auth-md').status).toBe('pass');
+    expect(check(report, 'api-catalog').status).toBe('pass');
+    expect(check(report, 'agent-card-a2a').status).toBe('pass');
+    expect(check(report, 'link-headers').status).toBe('pass');
+    expect(check(report, 'markdown-alt').status).toBe('pass');
   });
 
   it('flags a soft-404 (unknown paths return 200)', async () => {
