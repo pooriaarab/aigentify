@@ -179,7 +179,7 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
 
 function looksMarkdown(endpoint: Endpoint): boolean {
   const varyAccept = /(^|,)\s*accept\s*($|,)/i.test(endpoint.headers?.vary ?? '');
-  return /text\/markdown/i.test(endpoint.contentType) && varyAccept;
+  return ok(endpoint.status) && /text\/markdown/i.test(endpoint.contentType) && varyAccept;
 }
 
 function hasBodyContent(html: string): boolean {
@@ -196,8 +196,20 @@ function orgSchemaStatus(html: string): 'pass' | 'warn' {
   return orgBlocks.some(block => /"contactPoint"/i.test(block) && /"address"/i.test(block)) ? 'pass' : 'warn';
 }
 
+function looksLikeHomepage(agentResponse: Endpoint, home: Endpoint): boolean {
+  if (!ok(agentResponse.status)) return false;
+  if (/captcha|access denied|are you a (?:human|robot)|checking your browser|request blocked/i.test(agentResponse.text)) return false;
+  if (!ok(home.status) || !home.text.trim()) return true;
+  return agentResponse.text.length >= home.text.length * 0.5;
+}
+
 function hasRateLimitHeaders(endpoints: Endpoint[]): boolean {
-  return endpoints.some(endpoint => Object.keys(endpoint.headers ?? {}).some(key => /^(x-)?ratelimit-limit$/i.test(key)));
+  return endpoints.some(endpoint => {
+    if (!ok(endpoint.status)) return false;
+    const keys = Object.keys(endpoint.headers ?? {});
+    const has = (name: string) => keys.some(key => new RegExp(`^(x-)?ratelimit-${name}$`, 'i').test(key));
+    return has('limit') && has('remaining');
+  });
 }
 
 function buildChecks(snapshot: Snapshot): AuditCheck[] {
@@ -226,7 +238,7 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
   const markdownStatus: AuditStatus = !urlOnly ? 'na' : looksMarkdown(snapshot.homeMarkdown) ? 'pass' : 'warn';
   const contentStatus: AuditStatus = !urlOnly ? 'na' : !ok(snapshot.home.status) ? 'warn' : hasBodyContent(snapshot.home.text) ? 'pass' : 'warn';
   const orgStatus: AuditStatus = !urlOnly ? 'na' : !ok(snapshot.home.status) ? 'warn' : orgSchemaStatus(snapshot.home.text);
-  const crawlerStatus: AuditStatus = !urlOnly ? 'na' : ok(snapshot.homeAsAgent.status) ? 'pass' : 'warn';
+  const crawlerStatus: AuditStatus = !urlOnly ? 'na' : looksLikeHomepage(snapshot.homeAsAgent, snapshot.home) ? 'pass' : 'warn';
   const rateLimitStatus: AuditStatus = !urlOnly ? 'na' : hasRateLimitHeaders([snapshot.openapi, snapshot.server, snapshot.home]) ? 'pass' : 'warn';
   return [
     check('agents-md', agentsStatus, agentsPresent ? 'AGENTS.md is available.' : snapshot.agents.status === 0 ? 'The AGENTS.md request failed.' : 'AGENTS.md is missing.'),

@@ -69,7 +69,7 @@ describe('auditTarget', () => {
       if (url === `${base}/llms.txt`) return new Response('# Example product', {status: 200});
       if (url === `${base}/sitemap.xml`) return new Response('<urlset />', {status: 200});
       if (url === `${base}/.well-known/agent.json`) return new Response('{"name":"Example"}', {status: 200, headers: {'content-type': 'application/json'}});
-      if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json', 'ratelimit-limit': '100'}});
+      if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json', 'ratelimit-limit': '100', 'ratelimit-remaining': '99'}});
       if (url === `${base}/agents`) return new Response('<html>agents</html>', {status: 200, headers: {'content-type': 'text/html'}});
       return new Response('', {status: 404});
     };
@@ -140,6 +140,48 @@ describe('auditTarget', () => {
     };
     const report = await auditTarget(base, { fetch: fetcher });
     expect(check(report, 'org-schema').status).toBe('pass');
+  });
+
+  it('does not pass markdown-negotiation when the negotiated request errors', async () => {
+    const base = 'https://markdown-error.example';
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      const accept = new Headers(init?.headers).get('accept') ?? '';
+      if (url === base && /text\/markdown/.test(accept)) {
+        return new Response('Not Found', {status: 404, headers: {'content-type': 'text/markdown', vary: 'Accept'}});
+      }
+      if (url === base) return new Response('<html><body><h1>Home</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'markdown-negotiation').status).toBe('warn');
+  });
+
+  it('does not pass rate-limit-headers from a single header on an unrelated failed endpoint', async () => {
+    const base = 'https://ratelimit-partial.example';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response('<html><body><h1>Home</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404, headers: {'ratelimit-limit': '100'}});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'rate-limit-headers').status).toBe('warn');
+  });
+
+  it('does not pass crawler-reachable when the agent User-Agent hits a block page', async () => {
+    const base = 'https://waf.example';
+    const homeHtml = `<html><body><h1>Home</h1><p>${'Real homepage content for humans and well-behaved crawlers alike. '.repeat(10)}</p></body></html>`;
+    const fetcher = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      const userAgent = new Headers(init?.headers).get('user-agent') ?? '';
+      if (url === base && /ora-agent/.test(userAgent)) {
+        return new Response('<html><body>Access Denied - are you a robot?</body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      }
+      if (url === base) return new Response(homeHtml, {status: 200, headers: {'content-type': 'text/html'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'crawler-reachable').status).toBe('warn');
   });
 
   it('marks the is-agentic-parity signals na for a directory target', async () => {
