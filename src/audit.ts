@@ -170,7 +170,7 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
   // A path no real site serves — used to detect soft-404s (200 + app shell).
   const missingPath = `${base}/aigentify-probe-${'x'.repeat(8)}-404`;
   const [agents, server, mcp, home, llms, sitemap, wellKnown, wellKnownCard, openapi, agentsPage,
-    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, agentCard] = await Promise.all([
+    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog] = await Promise.all([
     fetchText(fetcher, `${base}/agents.md`), fetchText(fetcher, `${base}/server.json`), fetchText(fetcher, `${base}/.well-known/mcp`),
     fetchText(fetcher, base), fetchText(fetcher, `${base}/llms.txt`), fetchText(fetcher, `${base}/sitemap.xml`),
     fetchText(fetcher, `${base}/.well-known/agent.json`), fetchText(fetcher, `${base}/.well-known/agent-card.json`),
@@ -180,8 +180,9 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
     fetchText(fetcher, base, { headers: { 'user-agent': 'ora-agent' } }),
     fetchText(fetcher, `${base}/auth.md`),
     fetchText(fetcher, `${base}/.well-known/api-catalog`),
-    fetchText(fetcher, `${base}/.well-known/agent-card.json`),
   ]);
+  // agent-card.json is the same URL as the well-known probe above — reuse the response instead of fetching twice.
+  const agentCard = wellKnownCard;
   const endpoints = [agents, server, mcp, home, llms, sitemap];
   // either well-known agent manifest counts
   const wk = ok(wellKnown.status) ? wellKnown : wellKnownCard;
@@ -285,16 +286,18 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
     : ok(snapshot.authMd.status) && snapshot.authMd.text.trim().length > 0
       && (/text\/markdown/i.test(snapshot.authMd.contentType) || snapshot.authMd.text.trimStart().startsWith('#')) ? 'pass' : 'warn';
   const apiCatalogStatus: AuditStatus = !urlOnly ? 'na'
-    : ok(snapshot.apiCatalog.status) && parseJson(snapshot.apiCatalog.text) !== undefined ? 'pass' : 'warn';
+    : ok(snapshot.apiCatalog.status) && Array.isArray(parseJson(snapshot.apiCatalog.text)?.linkset) ? 'pass' : 'warn';
   const agentCardStatus: AuditStatus = !urlOnly ? 'na' : (() => {
     if (!ok(snapshot.agentCard.status)) return 'warn';
     const card = parseJson(snapshot.agentCard.text);
-    return card && typeof card.name === 'string' && typeof card.url === 'string' ? 'pass' : 'warn';
+    return card && typeof card.name === 'string' && card.name.trim().length > 0
+      && typeof card.url === 'string' && card.url.trim().length > 0 ? 'pass' : 'warn';
   })();
   const linkHeadersStatus: AuditStatus = !urlOnly ? 'na'
-    : typeof snapshot.home.headers?.link === 'string' && snapshot.home.headers.link.length > 0 ? 'pass' : 'warn';
+    : /llms\.txt|openapi\.json|agent-card|\.well-known/i.test(snapshot.home.headers?.link ?? '') ? 'pass' : 'warn';
   const markdownAltStatus: AuditStatus = !urlOnly ? 'na'
-    : /<link[^>]+rel=["']?alternate["']?[^>]+type=["']?text\/markdown/i.test(snapshot.home.text) ? 'pass' : 'warn';
+    : [...snapshot.home.text.matchAll(/<link\b[^>]*>/gi)].some(([tag]) =>
+        /rel=["']?alternate["']?/i.test(tag) && /type=["']?text\/markdown/i.test(tag)) ? 'pass' : 'warn';
   return [
     check('agents-md', agentsStatus, agentsPresent ? 'AGENTS.md is available.' : snapshot.agents.status === 0 ? 'The AGENTS.md request failed.' : 'AGENTS.md is missing.'),
     check('agents-md-public-safe', publicStatus, publicStatus === 'pass' ? 'AGENTS.md describes the product as a public surface.' : publicStatus === 'na' ? 'No AGENTS.md is available to inspect.' : 'AGENTS.md contains repository-internal guidance.'),
