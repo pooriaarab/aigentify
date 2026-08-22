@@ -14,6 +14,8 @@ interface Snapshot {
   wellKnown: Endpoint; openapi: Endpoint; agentsPage: Endpoint;
   // is-agentic-parity signals (URL targets only)
   notFound: Endpoint; homeMarkdown: Endpoint; homeAsAgent: Endpoint;
+  // Ora-parity round 2 (URL targets only)
+  authMd: Endpoint; apiCatalog: Endpoint; agentCard: Endpoint;
   honestText: string; hasMcp: boolean; networkFailure: boolean; isUrl: boolean;
 }
 
@@ -28,6 +30,8 @@ const WEIGHTS: Record<string, number> = {
   // is-agentic-parity web signals — na for CLI/dir targets, low weight
   'soft-404': 5, 'markdown-negotiation': 5, 'content-without-js': 5,
   'org-schema': 5, 'crawler-reachable': 5, 'rate-limit-headers': 5,
+  // Ora-parity round 2 web signals
+  'auth-md': 5, 'api-catalog': 5, 'agent-card-a2a': 5, 'link-headers': 5, 'markdown-alt': 5,
 };
 const FIXES: Record<string, string> = {
   'agents-md': 'Add a public AGENTS.md at the target root or serve /agents.md as text/markdown.',
@@ -47,6 +51,11 @@ const FIXES: Record<string, string> = {
   'org-schema': 'Add Organization JSON-LD with both contactPoint (email/phone + contactType) and address (PostalAddress).',
   'crawler-reachable': 'Let major agent User-Agents (GPTBot, ClaudeBot, ora-agent, ...) reach the homepage. Narrow WAF/bot rules that block them.',
   'rate-limit-headers': 'Return standard RateLimit-Limit/RateLimit-Remaining/RateLimit-Reset headers (plus Retry-After on 429) so agents can self-throttle.',
+  'auth-md': 'Publish /auth.md — a markdown guide describing how an agent authenticates (API key or OAuth) and where to get credentials.',
+  'api-catalog': 'Publish /.well-known/api-catalog (RFC 9727 linkset) pointing agents at your OpenAPI spec(s) and API docs.',
+  'agent-card-a2a': 'Publish /.well-known/agent-card.json (A2A agent card) with at least name and url so A2A clients can discover the agent.',
+  'link-headers': 'Return RFC 8288 Link headers on the homepage pointing at llms.txt, openapi.json, and the agent card so agents discover descriptors without parsing HTML.',
+  'markdown-alt': 'Add a <link rel="alternate" type="text/markdown"> to the homepage so agents can find the markdown representation.',
 };
 
 function check(id: string, status: AuditStatus, note: string): AuditCheck { return { id, status, note, weight: WEIGHTS[id] }; }
@@ -142,6 +151,7 @@ async function directorySnapshot(directory: string): Promise<Snapshot> {
     // advanced web signals are not meaningful for a repo directory — audited only for URL targets
     wellKnown: { status: 404, contentType: '', text: '' }, openapi: { status: 404, contentType: '', text: '' }, agentsPage: { status: 404, contentType: '', text: '' },
     notFound: { status: 404, contentType: '', text: '' }, homeMarkdown: { status: 404, contentType: '', text: '' }, homeAsAgent: { status: 404, contentType: '', text: '' },
+    authMd: { status: 404, contentType: '', text: '' }, apiCatalog: { status: 404, contentType: '', text: '' }, agentCard: { status: 404, contentType: '', text: '' },
     honestText, hasMcp: Boolean(mcpFile || serverFile || hasMcpBin), networkFailure: false, isUrl: false,
   };
 }
@@ -160,7 +170,7 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
   // A path no real site serves — used to detect soft-404s (200 + app shell).
   const missingPath = `${base}/aigentify-probe-${'x'.repeat(8)}-404`;
   const [agents, server, mcp, home, llms, sitemap, wellKnown, wellKnownCard, openapi, agentsPage,
-    notFound, homeMarkdown, homeAsAgent] = await Promise.all([
+    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, agentCard] = await Promise.all([
     fetchText(fetcher, `${base}/agents.md`), fetchText(fetcher, `${base}/server.json`), fetchText(fetcher, `${base}/.well-known/mcp`),
     fetchText(fetcher, base), fetchText(fetcher, `${base}/llms.txt`), fetchText(fetcher, `${base}/sitemap.xml`),
     fetchText(fetcher, `${base}/.well-known/agent.json`), fetchText(fetcher, `${base}/.well-known/agent-card.json`),
@@ -168,12 +178,15 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
     fetchText(fetcher, missingPath),
     fetchText(fetcher, base, { headers: { accept: 'text/markdown' } }),
     fetchText(fetcher, base, { headers: { 'user-agent': 'ora-agent' } }),
+    fetchText(fetcher, `${base}/auth.md`),
+    fetchText(fetcher, `${base}/.well-known/api-catalog`),
+    fetchText(fetcher, `${base}/.well-known/agent-card.json`),
   ]);
   const endpoints = [agents, server, mcp, home, llms, sitemap];
   // either well-known agent manifest counts
   const wk = ok(wellKnown.status) ? wellKnown : wellKnownCard;
   return { agents, server, mcp, home, llms, sitemap, wellKnown: wk, openapi, agentsPage,
-    notFound, homeMarkdown, homeAsAgent,
+    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, agentCard,
     honestText: [home.text, offerBlock(agents.text)].join('\n'), hasMcp: server.status >= 200 && server.status < 400 || mcp.status >= 200 && mcp.status < 400, networkFailure: endpoints.every(item => item.status === 0), isUrl: true };
 }
 
@@ -268,6 +281,20 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
   const orgStatus: AuditStatus = !urlOnly ? 'na' : !ok(snapshot.home.status) ? 'warn' : orgSchemaStatus(snapshot.home.text);
   const crawlerStatus: AuditStatus = !urlOnly ? 'na' : looksLikeHomepage(snapshot.homeAsAgent, snapshot.home) ? 'pass' : 'warn';
   const rateLimitStatus: AuditStatus = !urlOnly ? 'na' : hasRateLimitHeaders([snapshot.openapi, snapshot.server, snapshot.home]) ? 'pass' : 'warn';
+  const authMdStatus: AuditStatus = !urlOnly ? 'na'
+    : ok(snapshot.authMd.status) && snapshot.authMd.text.trim().length > 0
+      && (/text\/markdown/i.test(snapshot.authMd.contentType) || snapshot.authMd.text.trimStart().startsWith('#')) ? 'pass' : 'warn';
+  const apiCatalogStatus: AuditStatus = !urlOnly ? 'na'
+    : ok(snapshot.apiCatalog.status) && parseJson(snapshot.apiCatalog.text) !== undefined ? 'pass' : 'warn';
+  const agentCardStatus: AuditStatus = !urlOnly ? 'na' : (() => {
+    if (!ok(snapshot.agentCard.status)) return 'warn';
+    const card = parseJson(snapshot.agentCard.text);
+    return card && typeof card.name === 'string' && typeof card.url === 'string' ? 'pass' : 'warn';
+  })();
+  const linkHeadersStatus: AuditStatus = !urlOnly ? 'na'
+    : typeof snapshot.home.headers?.link === 'string' && snapshot.home.headers.link.length > 0 ? 'pass' : 'warn';
+  const markdownAltStatus: AuditStatus = !urlOnly ? 'na'
+    : /<link[^>]+rel=["']?alternate["']?[^>]+type=["']?text\/markdown/i.test(snapshot.home.text) ? 'pass' : 'warn';
   return [
     check('agents-md', agentsStatus, agentsPresent ? 'AGENTS.md is available.' : snapshot.agents.status === 0 ? 'The AGENTS.md request failed.' : 'AGENTS.md is missing.'),
     check('agents-md-public-safe', publicStatus, publicStatus === 'pass' ? 'AGENTS.md describes the product as a public surface.' : publicStatus === 'na' ? 'No AGENTS.md is available to inspect.' : 'AGENTS.md contains repository-internal guidance.'),
@@ -286,6 +313,11 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
     check('org-schema', orgStatus, orgStatus === 'pass' ? 'Organization JSON-LD includes contactPoint and address.' : orgStatus === 'na' ? 'Not audited (no served web surface).' : 'Organization JSON-LD is missing or lacks contactPoint/address.'),
     check('crawler-reachable', crawlerStatus, crawlerStatus === 'pass' ? 'The homepage is reachable by an agent User-Agent.' : crawlerStatus === 'na' ? 'Not audited (no served web surface).' : 'An agent User-Agent could not reach the homepage.'),
     check('rate-limit-headers', rateLimitStatus, rateLimitStatus === 'pass' ? 'Standard rate-limit headers are present.' : rateLimitStatus === 'na' ? 'Not audited (no served web surface).' : 'No RateLimit-* headers were found on probed endpoints.'),
+    check('auth-md', authMdStatus, authMdStatus === 'pass' ? '/auth.md is available.' : authMdStatus === 'na' ? 'Not audited (no served web surface).' : 'No /auth.md agent-auth guide was found.'),
+    check('api-catalog', apiCatalogStatus, apiCatalogStatus === 'pass' ? '/.well-known/api-catalog is available.' : apiCatalogStatus === 'na' ? 'Not audited (no served web surface).' : 'No /.well-known/api-catalog (RFC 9727) was found.'),
+    check('agent-card-a2a', agentCardStatus, agentCardStatus === 'pass' ? 'An A2A agent-card.json is available.' : agentCardStatus === 'na' ? 'Not audited (no served web surface).' : 'No valid /.well-known/agent-card.json (A2A) was found.'),
+    check('link-headers', linkHeadersStatus, linkHeadersStatus === 'pass' ? 'The homepage returns RFC 8288 Link headers.' : linkHeadersStatus === 'na' ? 'Not audited (no served web surface).' : 'No Link header was found on the homepage.'),
+    check('markdown-alt', markdownAltStatus, markdownAltStatus === 'pass' ? 'The homepage advertises a markdown alternate link.' : markdownAltStatus === 'na' ? 'Not audited (no served web surface).' : 'No <link rel="alternate" type="text/markdown"> was found.'),
   ];
 }
 
