@@ -76,6 +76,11 @@ describe('auditTarget', () => {
       if (url === `${base}/auth.md`) return new Response('# Auth\n\nUse a Bearer API key.', {status: 200, headers: {'content-type': 'text/markdown'}});
       if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json', 'ratelimit-limit': '100', 'ratelimit-remaining': '99', 'ratelimit-reset': '60'}});
       if (url === `${base}/agents`) return new Response('<html>agents</html>', {status: 200, headers: {'content-type': 'text/html'}});
+      if (url === `${base}/.well-known/ai-plugin.json`) return new Response('{"schema_version":"v1","name_for_model":"example"}', {status: 200, headers: {'content-type': 'application/json'}});
+      // External registries (round 3):
+      if (url.startsWith('https://www.wikidata.org/w/api.php')) return new Response('{"query":{"searchinfo":{"totalhits":1},"search":[{"title":"Q1"}]}}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url.startsWith('https://registry.npmjs.org/-/v1/search')) return new Response('{"objects":[{"package":{"name":"example-product","links":{"homepage":"https://example.com"}}}]}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url.startsWith('https://registry.modelcontextprotocol.io/v0/servers')) return new Response('{"servers":[{"server":{"name":"io.example/example","websiteUrl":"https://example.com"}}]}', {status: 200, headers: {'content-type': 'application/json'}});
       return new Response('', {status: 404});
     };
     const report = await auditTarget(base, { fetch: fetcher });
@@ -90,6 +95,28 @@ describe('auditTarget', () => {
     expect(check(report, 'agent-card-a2a').status).toBe('pass');
     expect(check(report, 'link-headers').status).toBe('pass');
     expect(check(report, 'markdown-alt').status).toBe('pass');
+    expect(check(report, 'ai-plugin').status).toBe('pass');
+    expect(check(report, 'wikidata').status).toBe('pass');
+    expect(check(report, 'npm-package').status).toBe('pass');
+    expect(check(report, 'mcp-registry').status).toBe('pass');
+  });
+
+  it('detects external discovery gaps when registries have no match', async () => {
+    const base = 'https://nolistings.example';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response('<html><head><title>NoListings</title></head><body><h1>x</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      // registries return empty results
+      if (url.startsWith('https://www.wikidata.org/w/api.php')) return new Response('{"query":{"searchinfo":{"totalhits":0},"search":[]}}', {status: 200});
+      if (url.startsWith('https://registry.npmjs.org/-/v1/search')) return new Response('{"objects":[]}', {status: 200});
+      if (url.startsWith('https://registry.modelcontextprotocol.io/v0/servers')) return new Response('{"servers":[]}', {status: 200});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'wikidata').status).toBe('warn');
+    expect(check(report, 'npm-package').status).toBe('warn');
+    expect(check(report, 'mcp-registry').status).toBe('warn');
+    expect(check(report, 'ai-plugin').status).toBe('warn');
   });
 
   it('flags a soft-404 (unknown paths return 200)', async () => {

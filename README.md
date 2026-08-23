@@ -63,7 +63,7 @@ Web (URL targets): `well-known-agent`, `openapi`, `agents-page`, `soft-404`
 (Organization JSON-LD with `contactPoint` and `address`), `crawler-reachable`
 (agent User-Agents can reach the homepage), and `rate-limit-headers` (standard
 `RateLimit-*` headers), plus `auth-md`, `api-catalog` (RFC 9727),
-`agent-card-a2a` (A2A), `link-headers` (RFC 8288), and `markdown-alt`.
+`agent-card-a2a` (A2A), `link-headers` (RFC 8288), `markdown-alt`, plus **external-discovery** checks that query third-party registries — `ai-plugin`, `wikidata` (P856 official-website match), `npm-package`, and `mcp-registry`.
 
 ## Configuration
 
