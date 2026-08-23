@@ -76,7 +76,7 @@ describe('auditTarget', () => {
       if (url === `${base}/auth.md`) return new Response('# Auth\n\nUse a Bearer API key.', {status: 200, headers: {'content-type': 'text/markdown'}});
       if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json', 'ratelimit-limit': '100', 'ratelimit-remaining': '99', 'ratelimit-reset': '60'}});
       if (url === `${base}/agents`) return new Response('<html>agents</html>', {status: 200, headers: {'content-type': 'text/html'}});
-      if (url === `${base}/.well-known/ai-plugin.json`) return new Response('{"schema_version":"v1","name_for_model":"example"}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === `${base}/.well-known/ai-plugin.json`) return new Response('{"schema_version":"v1","name_for_model":"example","api":{"type":"openapi","url":"/openapi.json"},"auth":{"type":"none"}}', {status: 200, headers: {'content-type': 'application/json'}});
       // External registries (round 3):
       if (url.startsWith('https://www.wikidata.org/w/api.php')) return new Response('{"query":{"searchinfo":{"totalhits":1},"search":[{"title":"Q1"}]}}', {status: 200, headers: {'content-type': 'application/json'}});
       if (url.startsWith('https://registry.npmjs.org/-/v1/search')) return new Response('{"objects":[{"package":{"name":"example-product","links":{"homepage":"https://example.com"}}}]}', {status: 200, headers: {'content-type': 'application/json'}});
@@ -125,6 +125,18 @@ describe('auditTarget', () => {
       const url = String(input);
       if (url === base) return new Response('<html><head><title>EmptyPlugin</title></head><body><h1>x</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
       if (url === `${base}/.well-known/ai-plugin.json`) return new Response('{}', {status: 200, headers: {'content-type': 'application/json'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'ai-plugin').status).toBe('warn');
+  });
+
+  it('rejects an ai-plugin.json that identifies itself but has no api/auth block', async () => {
+    const base = 'https://barepluginmanifest.example';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response('<html><head><title>Bare</title></head><body><h1>x</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      if (url === `${base}/.well-known/ai-plugin.json`) return new Response('{"schema_version":"v1","name_for_model":"example"}', {status: 200, headers: {'content-type': 'application/json'}});
       return new Response('', {status: 404});
     };
     const report = await auditTarget(base, { fetch: fetcher });

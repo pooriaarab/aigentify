@@ -260,12 +260,14 @@ async function probeExternalDiscovery(
         )}`,
       ),
     ),
-  ).then((results) => ({
-    found: results.some(
+  ).then((results) => {
+    const found = results.some(
       (d) => d !== REGISTRY_ERROR && ((d as { query?: { searchinfo?: { totalhits?: number } } })?.query?.searchinfo?.totalhits ?? 0) > 0,
-    ),
-    errored: results.every((d) => d === REGISTRY_ERROR),
-  }));
+    );
+    // A "not found" verdict is only confirmed if every variant was actually checked —
+    // if some variants errored out, an unchecked one could still have matched.
+    return { found, errored: !found && results.some((d) => d === REGISTRY_ERROR) };
+  });
 
   // npm: a package whose scope/name exactly matches the product or host label, or
   // whose homepage's hostname exactly equals the target host (not a raw substring —
@@ -296,8 +298,8 @@ async function probeExternalDiscovery(
   const slug = (name ?? host.split('.')[0]).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const mcpP = Promise.all(
     [slug, host].map((q) => fetchJson(fetcher, `https://registry.modelcontextprotocol.io/v0/servers?search=${encodeURIComponent(q)}`)),
-  ).then((results) => ({
-    found: results.some((d) => {
+  ).then((results) => {
+    const found = results.some((d) => {
       if (d === REGISTRY_ERROR) return false;
       const rawServers = (d as { servers?: unknown })?.servers;
       const servers = Array.isArray(rawServers) ? rawServers : [];
@@ -309,9 +311,10 @@ async function probeExternalDiscovery(
         const repoHost = safeHost(String((server?.repository as { url?: string } | undefined)?.url ?? ''));
         return wantNorms.includes(normalize(shortName)) || websiteHost === host || repoHost === host;
       });
-    }),
-    errored: results.every((d) => d === REGISTRY_ERROR),
-  }));
+    });
+    // Same rationale as the Wikidata lookup above: a "not found" verdict needs every query checked.
+    return { found, errored: !found && results.some((d) => d === REGISTRY_ERROR) };
+  });
 
   const [wikidata, npm, mcpRegistry] = await Promise.all([wikidataP, npmP, mcpP]);
   return {
@@ -463,10 +466,14 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
   // A manifest must identify itself — an empty `{}` (or any object lacking these) isn't a usable plugin descriptor.
   const aiPluginManifest: Record<string, unknown> = (ok(snapshot.aiPlugin.status) ? parseJson(snapshot.aiPlugin.text) : undefined) ?? {};
   const aiPluginStatus: AuditStatus = !urlOnly ? 'na'
-    : ['schema_version', 'name_for_model', 'name_for_human', 'api', 'auth'].some((key) => {
-        const value = aiPluginManifest[key];
-        return typeof value === 'string' ? value.trim().length > 0 : typeof value === 'object' && value !== null;
-      }) ? 'pass' : 'warn';
+    : (() => {
+        const isObject = (value: unknown) => typeof value === 'object' && value !== null;
+        const hasName = ['name_for_model', 'name_for_human'].some((key) => {
+          const value = aiPluginManifest[key];
+          return typeof value === 'string' && value.trim().length > 0;
+        });
+        return hasName && isObject(aiPluginManifest.api) && isObject(aiPluginManifest.auth) ? 'pass' : 'warn';
+      })();
   const wikidataStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.wikidata ? 'pass' : 'warn';
   const npmStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.npm ? 'pass' : 'warn';
   const mcpRegistryStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.mcpRegistry ? 'pass' : 'warn';
