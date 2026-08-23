@@ -16,8 +16,20 @@ interface Snapshot {
   notFound: Endpoint; homeMarkdown: Endpoint; homeAsAgent: Endpoint;
   // Ora-parity round 2 (URL targets only)
   authMd: Endpoint; apiCatalog: Endpoint; agentCard: Endpoint;
+  // External-discovery round 3 (URL targets only)
+  aiPlugin: Endpoint; external: ExternalDiscovery;
   honestText: string; hasMcp: boolean; networkFailure: boolean; isUrl: boolean;
 }
+
+interface ExternalDiscovery {
+  wikidata: boolean; wikidataError: boolean; // a Wikidata item links to this domain via P856 (official website)
+  npm: boolean; npmError: boolean; // an npm package matches the product/brand name
+  mcpRegistry: boolean; mcpRegistryError: boolean; // an entry in the official MCP registry matches the domain/name
+}
+
+const NO_EXTERNAL_DISCOVERY: ExternalDiscovery = {
+  wikidata: false, wikidataError: false, npm: false, npmError: false, mcpRegistry: false, mcpRegistryError: false,
+};
 
 function ok(status: number): boolean { return status >= 200 && status < 400; }
 
@@ -32,6 +44,8 @@ const WEIGHTS: Record<string, number> = {
   'org-schema': 5, 'crawler-reachable': 5, 'rate-limit-headers': 5,
   // Ora-parity round 2 web signals
   'auth-md': 5, 'api-catalog': 5, 'agent-card-a2a': 5, 'link-headers': 5, 'markdown-alt': 5,
+  // External-discovery round 3 (queries third-party registries) — na for CLI/dir targets
+  'ai-plugin': 5, wikidata: 5, 'npm-package': 5, 'mcp-registry': 5,
 };
 const FIXES: Record<string, string> = {
   'agents-md': 'Add a public AGENTS.md at the target root or serve /agents.md as text/markdown.',
@@ -56,6 +70,10 @@ const FIXES: Record<string, string> = {
   'agent-card-a2a': 'Publish /.well-known/agent-card.json (A2A agent card) with at least name and url so A2A clients can discover the agent.',
   'link-headers': 'Return RFC 8288 Link headers on the homepage pointing at llms.txt, openapi.json, and the agent card so agents discover descriptors without parsing HTML.',
   'markdown-alt': 'Add a <link rel="alternate" type="text/markdown"> to the homepage so agents can find the markdown representation.',
+  'ai-plugin': 'Publish /.well-known/ai-plugin.json (the plugin manifest) so plugin hosts and agents can auto-discover your API and auth.',
+  wikidata: 'Create a Wikidata item for the product with an official-website (P856) statement pointing at your domain, so agents can verify the entity.',
+  'npm-package': 'Publish an official SDK/CLI to npm under a discoverable name so agents can install a typed client.',
+  'mcp-registry': 'List your MCP server in the official MCP registry (server.json + mcp-publisher) so agents discover it by name.',
 };
 
 function check(id: string, status: AuditStatus, note: string): AuditCheck { return { id, status, note, weight: WEIGHTS[id] }; }
@@ -152,6 +170,7 @@ async function directorySnapshot(directory: string): Promise<Snapshot> {
     wellKnown: { status: 404, contentType: '', text: '' }, openapi: { status: 404, contentType: '', text: '' }, agentsPage: { status: 404, contentType: '', text: '' },
     notFound: { status: 404, contentType: '', text: '' }, homeMarkdown: { status: 404, contentType: '', text: '' }, homeAsAgent: { status: 404, contentType: '', text: '' },
     authMd: { status: 404, contentType: '', text: '' }, apiCatalog: { status: 404, contentType: '', text: '' }, agentCard: { status: 404, contentType: '', text: '' },
+    aiPlugin: { status: 404, contentType: '', text: '' }, external: NO_EXTERNAL_DISCOVERY,
     honestText, hasMcp: Boolean(mcpFile || serverFile || hasMcpBin), networkFailure: false, isUrl: false,
   };
 }
@@ -165,12 +184,152 @@ async function fetchText(fetcher: typeof globalThis.fetch, url: string, init?: R
   } catch { return { status: 0, contentType: '', text: '', headers: {} }; }
 }
 
+/** The product/brand name — from the A2A agent card, else the homepage <title>. */
+function productName(agentCard: Endpoint, home: Endpoint): string | null {
+  const card = parseJson(agentCard.text);
+  if (card && typeof card.name === 'string' && card.name.trim()) return card.name.trim();
+  const title = /<title[^>]*>([^<]{2,120})<\/title>/i.exec(home.text)?.[1]?.trim();
+  // Drop a trailing " | tagline" / " - tagline" so "Content Rabbit | ..." → "Content Rabbit".
+  return title ? title.split(/\s[|–—-]\s/)[0].trim() : null;
+}
+
+// Wikimedia and other registries require a descriptive User-Agent with a contact URL.
+const EXTERNAL_UA = 'aigentify/0.4 (+https://github.com/pooriaarab/aigentify)';
+
+// Sentinel distinguishing "the registry call failed" (rate-limited, timed out, 5xx) from
+// "the registry answered and the product isn't listed" — the two must not be conflated,
+// or a transient 429 gets reported as a confirmed "not discoverable" gap.
+const REGISTRY_ERROR = Symbol('registry-error');
+
+async function fetchJson(fetcher: typeof globalThis.fetch, url: string): Promise<unknown> {
+  try {
+    const res = await fetcher(url, {
+      signal: AbortSignal.timeout(8000),
+      headers: { accept: 'application/json', 'user-agent': EXTERNAL_UA },
+    });
+    if (!ok(res.status)) return REGISTRY_ERROR;
+    return await res.json();
+  } catch {
+    return REGISTRY_ERROR;
+  }
+}
+
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/** Registered host of a URL, www-stripped; '' if unparsable. Used for exact (not substring) host matches. */
+function safeHost(url: string): string {
+  try {
+    return new URL(url).host.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/** Query third-party registries for the product — this is what makes aigentify a superset of Ora. */
+async function probeExternalDiscovery(
+  fetcher: typeof globalThis.fetch,
+  base: string,
+  name: string | null,
+): Promise<ExternalDiscovery> {
+  const host = (() => {
+    try {
+      return new URL(base).host.replace(/^www\./, '');
+    } catch {
+      return base;
+    }
+  })();
+  const productNorm = name ? normalize(name) : '';
+  const hostLabelNorm = normalize(host.split('.')[0]);
+  const wantNorms = [productNorm, hostLabelNorm].filter(Boolean);
+
+  // Wikidata: an item whose official-website (P856) links to this domain. The
+  // main API's haswbstatement search is more reliable than the WDQS SPARQL
+  // endpoint (which rate-limits and rejects generic User-Agents). P856 values in
+  // the wild vary in scheme/www/trailing-slash, so probe the common variants.
+  const wikidataVariants = ['https://', 'http://'].flatMap((scheme) =>
+    [host, `www.${host}`].flatMap((h) => ['', '/'].map((slash) => `${scheme}${h}${slash}`)),
+  );
+  const wikidataP = Promise.all(
+    wikidataVariants.map((val) =>
+      fetchJson(
+        fetcher,
+        `https://www.wikidata.org/w/api.php?action=query&list=search&format=json&srsearch=${encodeURIComponent(
+          `haswbstatement:P856=${val}`,
+        )}`,
+      ),
+    ),
+  ).then((results) => {
+    const found = results.some(
+      (d) => d !== REGISTRY_ERROR && ((d as { query?: { searchinfo?: { totalhits?: number } } })?.query?.searchinfo?.totalhits ?? 0) > 0,
+    );
+    // A "not found" verdict is only confirmed if every variant was actually checked —
+    // if some variants errored out, an unchecked one could still have matched.
+    return { found, errored: !found && results.some((d) => d === REGISTRY_ERROR) };
+  });
+
+  // npm: a package whose scope/name exactly matches the product or host label, or
+  // whose homepage's hostname exactly equals the target host (not a raw substring —
+  // that would match e.g. an unrelated "example.com.evil.test" homepage or any
+  // package that happens to contain a generic host label like "app").
+  const npmQuery = name ?? host.split('.')[0];
+  const npmP = fetchJson(fetcher, `https://registry.npmjs.org/-/v1/search?size=20&text=${encodeURIComponent(npmQuery)}`).then((d) => {
+    if (d === REGISTRY_ERROR) return { found: false, errored: true };
+    const rawObjects = (d as { objects?: unknown })?.objects;
+    const objects = Array.isArray(rawObjects) ? (rawObjects as { package?: { name?: string; links?: { homepage?: string } } }[]) : [];
+    const found = objects.some((o) => {
+      const pkgName = (o.package?.name ?? '').toLowerCase();
+      if (!pkgName) return false;
+      const scope = /^@([^/]+)\//.exec(pkgName)?.[1] ?? '';
+      const unscoped = pkgName.replace(/^@[^/]+\//, '');
+      const candidates = [pkgName, unscoped, scope].filter(Boolean).map(normalize);
+      const nameMatches = candidates.some((c) => wantNorms.includes(c));
+      const homepageHost = safeHost(o.package?.links?.homepage ?? '');
+      return nameMatches || (homepageHost !== '' && homepageHost === host);
+    });
+    return { found, errored: false };
+  });
+
+  // MCP registry: a server entry whose (short) name normalizes to the product/host,
+  // or whose websiteUrl/repository hostname exactly equals the target host. The
+  // registry search tokenizes on hyphens, so search by the slug form ("Content
+  // Rabbit" -> "content-rabbit") as well as the raw host.
+  const slug = (name ?? host.split('.')[0]).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const mcpP = Promise.all(
+    [slug, host].map((q) => fetchJson(fetcher, `https://registry.modelcontextprotocol.io/v0/servers?search=${encodeURIComponent(q)}`)),
+  ).then((results) => {
+    const found = results.some((d) => {
+      if (d === REGISTRY_ERROR) return false;
+      const rawServers = (d as { servers?: unknown })?.servers;
+      const servers = Array.isArray(rawServers) ? rawServers : [];
+      return servers.some((entry) => {
+        const server = ((entry as { server?: Record<string, unknown> })?.server ?? entry) as Record<string, unknown>;
+        const rawName = String(server?.name ?? '');
+        const shortName = rawName.includes('/') ? rawName.slice(rawName.lastIndexOf('/') + 1) : rawName;
+        const websiteHost = safeHost(String(server?.websiteUrl ?? ''));
+        const repoHost = safeHost(String((server?.repository as { url?: string } | undefined)?.url ?? ''));
+        return wantNorms.includes(normalize(shortName)) || websiteHost === host || repoHost === host;
+      });
+    });
+    // Same rationale as the Wikidata lookup above: a "not found" verdict needs every query checked.
+    return { found, errored: !found && results.some((d) => d === REGISTRY_ERROR) };
+  });
+
+  const [wikidata, npm, mcpRegistry] = await Promise.all([wikidataP, npmP, mcpP]);
+  return {
+    wikidata: wikidata.found, wikidataError: wikidata.errored,
+    npm: npm.found, npmError: npm.errored,
+    mcpRegistry: mcpRegistry.found, mcpRegistryError: mcpRegistry.errored,
+  };
+}
+
 async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Promise<Snapshot> {
   const base = target.replace(/\/+$/, '');
   // A path no real site serves — used to detect soft-404s (200 + app shell).
   const missingPath = `${base}/aigentify-probe-${'x'.repeat(8)}-404`;
   const [agents, server, mcp, home, llms, sitemap, wellKnown, wellKnownCard, openapi, agentsPage,
-    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog] = await Promise.all([
+    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, aiPlugin] = await Promise.all([
     fetchText(fetcher, `${base}/agents.md`), fetchText(fetcher, `${base}/server.json`), fetchText(fetcher, `${base}/.well-known/mcp`),
     fetchText(fetcher, base), fetchText(fetcher, `${base}/llms.txt`), fetchText(fetcher, `${base}/sitemap.xml`),
     fetchText(fetcher, `${base}/.well-known/agent.json`), fetchText(fetcher, `${base}/.well-known/agent-card.json`),
@@ -180,14 +339,19 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
     fetchText(fetcher, base, { headers: { 'user-agent': 'ora-agent' } }),
     fetchText(fetcher, `${base}/auth.md`),
     fetchText(fetcher, `${base}/.well-known/api-catalog`),
+    fetchText(fetcher, `${base}/.well-known/ai-plugin.json`),
   ]);
   // agent-card.json is the same URL as the well-known probe above — reuse the response instead of fetching twice.
   const agentCard = wellKnownCard;
   const endpoints = [agents, server, mcp, home, llms, sitemap];
   // either well-known agent manifest counts
   const wk = ok(wellKnown.status) ? wellKnown : wellKnownCard;
+  // External-discovery probe — only when the site itself resolved (skip on total network failure).
+  const external = endpoints.every((item) => item.status === 0)
+    ? NO_EXTERNAL_DISCOVERY
+    : await probeExternalDiscovery(fetcher, base, productName(agentCard, home));
   return { agents, server, mcp, home, llms, sitemap, wellKnown: wk, openapi, agentsPage,
-    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, agentCard,
+    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, agentCard, aiPlugin, external,
     honestText: [home.text, offerBlock(agents.text)].join('\n'), hasMcp: server.status >= 200 && server.status < 400 || mcp.status >= 200 && mcp.status < 400, networkFailure: endpoints.every(item => item.status === 0), isUrl: true };
 }
 
@@ -298,6 +462,21 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
   const markdownAltStatus: AuditStatus = !urlOnly ? 'na'
     : [...snapshot.home.text.matchAll(/<link\b[^>]*>/gi)].some(([tag]) =>
         /rel=["']?alternate["']?/i.test(tag) && /type=["']?text\/markdown/i.test(tag)) ? 'pass' : 'warn';
+  // External-discovery round 3 — third-party registry lookups.
+  // A manifest must identify itself — an empty `{}` (or any object lacking these) isn't a usable plugin descriptor.
+  const aiPluginManifest: Record<string, unknown> = (ok(snapshot.aiPlugin.status) ? parseJson(snapshot.aiPlugin.text) : undefined) ?? {};
+  const aiPluginStatus: AuditStatus = !urlOnly ? 'na'
+    : (() => {
+        const isObject = (value: unknown) => typeof value === 'object' && value !== null;
+        const hasName = ['name_for_model', 'name_for_human'].some((key) => {
+          const value = aiPluginManifest[key];
+          return typeof value === 'string' && value.trim().length > 0;
+        });
+        return hasName && isObject(aiPluginManifest.api) && isObject(aiPluginManifest.auth) ? 'pass' : 'warn';
+      })();
+  const wikidataStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.wikidata ? 'pass' : 'warn';
+  const npmStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.npm ? 'pass' : 'warn';
+  const mcpRegistryStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.mcpRegistry ? 'pass' : 'warn';
   return [
     check('agents-md', agentsStatus, agentsPresent ? 'AGENTS.md is available.' : snapshot.agents.status === 0 ? 'The AGENTS.md request failed.' : 'AGENTS.md is missing.'),
     check('agents-md-public-safe', publicStatus, publicStatus === 'pass' ? 'AGENTS.md describes the product as a public surface.' : publicStatus === 'na' ? 'No AGENTS.md is available to inspect.' : 'AGENTS.md contains repository-internal guidance.'),
@@ -321,6 +500,10 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
     check('agent-card-a2a', agentCardStatus, agentCardStatus === 'pass' ? 'An A2A agent-card.json is available.' : agentCardStatus === 'na' ? 'Not audited (no served web surface).' : 'No valid /.well-known/agent-card.json (A2A) was found.'),
     check('link-headers', linkHeadersStatus, linkHeadersStatus === 'pass' ? 'The homepage returns RFC 8288 Link headers.' : linkHeadersStatus === 'na' ? 'Not audited (no served web surface).' : 'No Link header was found on the homepage.'),
     check('markdown-alt', markdownAltStatus, markdownAltStatus === 'pass' ? 'The homepage advertises a markdown alternate link.' : markdownAltStatus === 'na' ? 'Not audited (no served web surface).' : 'No <link rel="alternate" type="text/markdown"> was found.'),
+    check('ai-plugin', aiPluginStatus, aiPluginStatus === 'pass' ? 'A /.well-known/ai-plugin.json manifest is available.' : aiPluginStatus === 'na' ? 'Not audited (no served web surface).' : 'No usable /.well-known/ai-plugin.json manifest was found (missing, empty, or lacking identifying fields).'),
+    check('wikidata', wikidataStatus, wikidataStatus === 'pass' ? 'A Wikidata item links to this domain (P856).' : wikidataStatus === 'na' ? 'Not audited (no served web surface).' : snapshot.external.wikidataError ? 'The Wikidata lookup could not be completed (registry error or timeout) — not a confirmed gap.' : 'No Wikidata item links to this domain via official website (P856).'),
+    check('npm-package', npmStatus, npmStatus === 'pass' ? 'A matching npm package is published.' : npmStatus === 'na' ? 'Not audited (no served web surface).' : snapshot.external.npmError ? 'The npm registry lookup could not be completed (registry error or timeout) — not a confirmed gap.' : 'No npm package matching the product was found.'),
+    check('mcp-registry', mcpRegistryStatus, mcpRegistryStatus === 'pass' ? 'Listed in the official MCP registry.' : mcpRegistryStatus === 'na' ? 'Not audited (no served web surface).' : snapshot.external.mcpRegistryError ? 'The MCP registry lookup could not be completed (registry error or timeout) — not a confirmed gap.' : 'No entry matching this product was found in the official MCP registry.'),
   ];
 }
 
