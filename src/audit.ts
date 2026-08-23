@@ -271,23 +271,23 @@ async function probeExternalDiscovery(
   // whose homepage's hostname exactly equals the target host (not a raw substring —
   // that would match e.g. an unrelated "example.com.evil.test" homepage or any
   // package that happens to contain a generic host label like "app").
-  const npmP = name
-    ? fetchJson(fetcher, `https://registry.npmjs.org/-/v1/search?size=20&text=${encodeURIComponent(name)}`).then((d) => {
-        if (d === REGISTRY_ERROR) return { found: false, errored: true };
-        const objects = (d as { objects?: { package?: { name?: string; links?: { homepage?: string } } }[] })?.objects ?? [];
-        const found = objects.some((o) => {
-          const pkgName = (o.package?.name ?? '').toLowerCase();
-          if (!pkgName) return false;
-          const scope = /^@([^/]+)\//.exec(pkgName)?.[1] ?? '';
-          const unscoped = pkgName.replace(/^@[^/]+\//, '');
-          const candidates = [pkgName, unscoped, scope].filter(Boolean).map(normalize);
-          const nameMatches = candidates.some((c) => wantNorms.includes(c));
-          const homepageHost = safeHost(o.package?.links?.homepage ?? '');
-          return nameMatches || (homepageHost !== '' && homepageHost === host);
-        });
-        return { found, errored: false };
-      })
-    : Promise.resolve({ found: false, errored: false });
+  const npmQuery = name ?? host.split('.')[0];
+  const npmP = fetchJson(fetcher, `https://registry.npmjs.org/-/v1/search?size=20&text=${encodeURIComponent(npmQuery)}`).then((d) => {
+    if (d === REGISTRY_ERROR) return { found: false, errored: true };
+    const rawObjects = (d as { objects?: unknown })?.objects;
+    const objects = Array.isArray(rawObjects) ? (rawObjects as { package?: { name?: string; links?: { homepage?: string } } }[]) : [];
+    const found = objects.some((o) => {
+      const pkgName = (o.package?.name ?? '').toLowerCase();
+      if (!pkgName) return false;
+      const scope = /^@([^/]+)\//.exec(pkgName)?.[1] ?? '';
+      const unscoped = pkgName.replace(/^@[^/]+\//, '');
+      const candidates = [pkgName, unscoped, scope].filter(Boolean).map(normalize);
+      const nameMatches = candidates.some((c) => wantNorms.includes(c));
+      const homepageHost = safeHost(o.package?.links?.homepage ?? '');
+      return nameMatches || (homepageHost !== '' && homepageHost === host);
+    });
+    return { found, errored: false };
+  });
 
   // MCP registry: a server entry whose (short) name normalizes to the product/host,
   // or whose websiteUrl/repository hostname exactly equals the target host. The
@@ -299,7 +299,8 @@ async function probeExternalDiscovery(
   ).then((results) => ({
     found: results.some((d) => {
       if (d === REGISTRY_ERROR) return false;
-      const servers = (d as { servers?: unknown[] })?.servers ?? [];
+      const rawServers = (d as { servers?: unknown })?.servers;
+      const servers = Array.isArray(rawServers) ? rawServers : [];
       return servers.some((entry) => {
         const server = ((entry as { server?: Record<string, unknown> })?.server ?? entry) as Record<string, unknown>;
         const rawName = String(server?.name ?? '');
@@ -462,7 +463,10 @@ function buildChecks(snapshot: Snapshot): AuditCheck[] {
   // A manifest must identify itself — an empty `{}` (or any object lacking these) isn't a usable plugin descriptor.
   const aiPluginManifest: Record<string, unknown> = (ok(snapshot.aiPlugin.status) ? parseJson(snapshot.aiPlugin.text) : undefined) ?? {};
   const aiPluginStatus: AuditStatus = !urlOnly ? 'na'
-    : ['schema_version', 'name_for_model', 'name_for_human', 'api', 'auth'].some((key) => aiPluginManifest[key] !== undefined) ? 'pass' : 'warn';
+    : ['schema_version', 'name_for_model', 'name_for_human', 'api', 'auth'].some((key) => {
+        const value = aiPluginManifest[key];
+        return typeof value === 'string' ? value.trim().length > 0 : typeof value === 'object' && value !== null;
+      }) ? 'pass' : 'warn';
   const wikidataStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.wikidata ? 'pass' : 'warn';
   const npmStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.npm ? 'pass' : 'warn';
   const mcpRegistryStatus: AuditStatus = !urlOnly ? 'na' : snapshot.external.mcpRegistry ? 'pass' : 'warn';
