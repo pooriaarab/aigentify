@@ -6,7 +6,7 @@ import { auditTarget } from './audit.js';
 import { PKG_NAME, VERSION } from './constants.js';
 import { generate, type GenerateParams, type GeneratedArtifact } from './generators/index.js';
 
-const artifacts = ['agents-md', 'server-json', 'offer', 'agents-route'] as const;
+const artifacts = ['agents-md', 'server-json', 'offer', 'agents-route', 'auth-md'] as const;
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({ name: PKG_NAME, version: VERSION });

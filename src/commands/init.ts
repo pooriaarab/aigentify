@@ -11,7 +11,7 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   await mkdir(root, { recursive: true });
   const config = defaultConfig();
   const result: InitResult = { created: [], skipped: [] };
-  for (const [name, content] of [['AGENTS.md', generate('agents-md', config)], ['server.json', generate('server-json', config)]] as const) {
+  for (const [name, content] of [['AGENTS.md', generate('agents-md', config)], ['server.json', generate('server-json', config)], ['auth.md', generate('auth-md', config)]] as const) {
     const file = path.join(root, name);
     try {
       await access(file);
