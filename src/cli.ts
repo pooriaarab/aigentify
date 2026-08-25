@@ -19,9 +19,9 @@ program.command('init').description('Write starter AGENTS.md and server.json int
   process.stdout.write(`created ${result.created.length}, skipped ${result.skipped.length}\n`);
 });
 
-program.command('gen <artifact>').description('Generate an agent-native artifact.').option('-o, --out <path>', 'write to a file instead of stdout').option('--name <name>').option('--description <description>').option('--repository <url>').option('--mcp-url <url>').option('--npm-package <name>').option('--price <price>').option('--price-currency <currency>').option('--framework <framework>', 'route framework, such as static or next', 'static').action(async (artifact: string, options: Record<string, string | undefined>) => {
+program.command('gen <artifact>').description('Generate an agent-native artifact.').option('-o, --out <path>', 'write to a file instead of stdout').option('--name <name>').option('--description <description>').option('--repository <url>').option('--mcp-url <url>').option('--npm-package <name>').option('--api-base-url <url>').option('--signup-url <url>').option('--price <price>').option('--price-currency <currency>').option('--framework <framework>', 'route framework, such as static or next', 'static').action(async (artifact: string, options: Record<string, string | undefined>) => {
   const offer = options.price === undefined && options.priceCurrency === undefined ? undefined : { price: options.price, priceCurrency: options.priceCurrency };
-  const params = Object.fromEntries(Object.entries({ name: options.name, description: options.description, repository: options.repository, mcpUrl: options.mcpUrl, npmPackage: options.npmPackage, framework: options.framework, offer }).filter(([, value]) => value !== undefined));
+  const params = Object.fromEntries(Object.entries({ name: options.name, description: options.description, repository: options.repository, mcpUrl: options.mcpUrl, npmPackage: options.npmPackage, apiBaseUrl: options.apiBaseUrl, signupUrl: options.signupUrl, framework: options.framework, offer }).filter(([, value]) => value !== undefined));
   const content = await generateArtifact(artifact as GeneratedArtifact, process.cwd(), params as GenerateParams);
   if (options.out) { const { writeFile } = await import('node:fs/promises'); await writeFile(options.out, content, 'utf8'); }
   else process.stdout.write(content);

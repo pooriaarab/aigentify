@@ -12,6 +12,8 @@ export interface AigentifyConfig {
   version?: string;
   mcpUrl?: string;
   npmPackage?: string;
+  apiBaseUrl?: string;
+  signupUrl?: string;
   offer?: OfferConfig;
 }
 
