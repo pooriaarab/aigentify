@@ -1,5 +1,8 @@
 # aigentify
 
+Before public copy or interface work, read `.agents/brand.md` and
+`.agents/design.md`.
+
 ## Mental model
 
 aigentify audits whether a product is ready for agents and creates the public files that agents need.
