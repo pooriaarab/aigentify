@@ -1,11 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
-  "plugins": [
-    "typescript",
-    "import",
-    "unicorn",
-    "oxc"
-  ],
+  "plugins": ["typescript", "import", "unicorn", "oxc"],
   "categories": {
     "correctness": "warn",
     "suspicious": "warn",
@@ -84,11 +79,7 @@
       }
     },
     {
-      "files": [
-        "scripts/**",
-        "**/scripts/**",
-        "**/*.config.*"
-      ],
+      "files": ["scripts/**", "**/scripts/**", "**/*.config.*"],
       "rules": {
         "max-lines-per-function": "off",
         "complexity": "off"

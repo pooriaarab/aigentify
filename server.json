@@ -15,9 +15,7 @@
       "version": "0.1.2",
       "transport": { "type": "stdio" },
       "runtimeHint": "npx",
-      "packageArguments": [
-        { "type": "positional", "valueHint": "subcommand", "value": "mcp" }
-      ]
+      "packageArguments": [{ "type": "positional", "valueHint": "subcommand", "value": "mcp" }]
     }
   ]
 }

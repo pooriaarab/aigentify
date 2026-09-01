@@ -12,10 +12,10 @@ aigentify audits whether a product is ready for agents and creates the public fi
 
 ## MCP tools
 
-| Tool | Input | Result |
-| --- | --- | --- |
-| audit | `{ target }` | A score and a list of agent-readiness gaps. |
-| gen | `{ artifact, params }` | Generated artifact text. |
+| Tool  | Input                  | Result                                      |
+| ----- | ---------------------- | ------------------------------------------- |
+| audit | `{ target }`           | A score and a list of agent-readiness gaps. |
+| gen   | `{ artifact, params }` | Generated artifact text.                    |
 
 ## The loop
 

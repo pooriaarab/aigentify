@@ -1,7 +1,7 @@
-import type { AigentifyConfig } from '../config.js';
+import type { AigentifyConfig } from "../config.js";
 
 export function generateAuthMd(config: AigentifyConfig): string {
-  const packageName = config.npmPackage ?? '<NPM_PACKAGE>';
+  const packageName = config.npmPackage ?? "<NPM_PACKAGE>";
   const mcp = config.mcpUrl ?? `npx ${packageName}`;
   const apiBase = config.apiBaseUrl;
 
@@ -33,7 +33,7 @@ ${getKey}
 \`\`\`
 Authorization: Bearer <API_KEY>
 \`\`\`
-${apiBase ? `\n- REST API base: ${apiBase}` : ''}
+${apiBase ? `\n- REST API base: ${apiBase}` : ""}
 - MCP: ${mcp}
 
 Read the key at call time. Never log or echo it.

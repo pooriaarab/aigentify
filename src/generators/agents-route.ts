@@ -1,7 +1,7 @@
-import type { AigentifyConfig } from '../config.js';
+import type { AigentifyConfig } from "../config.js";
 
-export function generateAgentsRoute(config: AigentifyConfig, framework = 'static'): string {
-  if (framework === 'next') {
+export function generateAgentsRoute(config: AigentifyConfig, framework = "static"): string {
+  if (framework === "next") {
     return `# Serve /agents.md from a Next route
 
 Copy AGENTS.md to a public directory, or add this force-static route:

@@ -2,10 +2,10 @@
 
 Three long-lived branches drive the pipeline:
 
-| Branch | On push | npm result |
-| --- | --- | --- |
-| `main` | CI runs `npm run verify` | none (development) |
-| `staging` | verify, then publish a throwaway prerelease | `aigentify@next` |
+| Branch       | On push                                       | npm result         |
+| ------------ | --------------------------------------------- | ------------------ |
+| `main`       | CI runs `npm run verify`                      | none (development) |
+| `staging`    | verify, then publish a throwaway prerelease   | `aigentify@next`   |
 | `production` | verify, then publish `package.json`'s version | `aigentify@latest` |
 
 ## One-time setup

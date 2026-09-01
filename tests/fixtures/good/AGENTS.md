@@ -10,10 +10,10 @@ Use the product site or its agent interface.
 
 ## MCP tools
 
-| Tool | Input | Result |
-| --- | --- | --- |
-| audit | target | A report. |
-| gen | artifact and params | Text. |
+| Tool  | Input               | Result    |
+| ----- | ------------------- | --------- |
+| audit | target              | A report. |
+| gen   | artifact and params | Text.     |
 
 ## The loop
 

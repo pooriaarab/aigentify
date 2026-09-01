@@ -13,13 +13,13 @@ npm install aigentify
 Use the library in JavaScript or TypeScript:
 
 ```ts
-import { auditTarget, generate } from 'aigentify';
+import { auditTarget, generate } from "aigentify";
 
-const report = await auditTarget('.');
-const instructions = generate('agents-md', {
-  name: 'Example product',
-  description: 'A product with a clear agent interface.',
-  repository: 'https://github.com/example/product',
+const report = await auditTarget(".");
+const instructions = generate("agents-md", {
+  name: "Example product",
+  description: "A product with a clear agent interface.",
+  repository: "https://github.com/example/product",
 });
 ```
 
@@ -70,14 +70,14 @@ Web (URL targets): `well-known-agent`, `openapi`, `agents-page`, `soft-404`
 Add an optional `aigentify.config.ts`, `aigentify.config.js`, or `aigentify.config.mjs` file. Export `defineConfig(...)` data as the default export or as `aigentifyConfig`.
 
 ```ts
-import { defineConfig } from 'aigentify';
+import { defineConfig } from "aigentify";
 
 export default defineConfig({
-  name: 'Example product',
-  description: 'A product with a clear agent interface.',
-  repository: 'https://github.com/example/product',
-  npmPackage: 'example-product',
-  offer: { name: 'Access', price: 0, priceCurrency: 'USD' },
+  name: "Example product",
+  description: "A product with a clear agent interface.",
+  repository: "https://github.com/example/product",
+  npmPackage: "example-product",
+  offer: { name: "Access", price: 0, priceCurrency: "USD" },
 });
 ```
 

@@ -1,10 +1,13 @@
-import type { AigentifyConfig } from '../config.js';
+import type { AigentifyConfig } from "../config.js";
 
 export function generateAgentsMd(config: AigentifyConfig): string {
-  const packageName = config.npmPackage ?? '<NPM_PACKAGE>';
+  const packageName = config.npmPackage ?? "<NPM_PACKAGE>";
   const mcp = config.mcpUrl ?? `npx ${packageName}`;
   const offer = config.offer;
-  const offerLine = offer?.price === undefined ? 'Price: <PRICE>' : `Price: ${offer.priceCurrency ?? 'USD'} ${offer.price}`;
+  const offerLine =
+    offer?.price === undefined
+      ? "Price: <PRICE>"
+      : `Price: ${offer.priceCurrency ?? "USD"} ${offer.price}`;
   return `# ${config.name}
 
 ## Mental model
@@ -42,7 +45,7 @@ Use the product interface for product work. Use the agent interface for repeatab
 
 ## Offer
 
-${offer?.description ?? '<OFFER_DESCRIPTION>'}
+${offer?.description ?? "<OFFER_DESCRIPTION>"}
 
 ${offerLine}
 `;
