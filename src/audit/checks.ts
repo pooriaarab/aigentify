@@ -2,12 +2,13 @@ import { SERVER_SCHEMA_URL, SERVER_SCHEMA_RE } from '../constants.js';
 import type { AuditCheck, AuditGap, AuditStatus, Endpoint, Snapshot } from './types.js';
 import { ok, parseJson } from './shared.js';
 import { hasBodyContent, hasRateLimitHeaders, looksLikeHomepage, looksMarkdown, orgSchemaStatus } from './signals.js';
+import { poppyNote, poppyStatus } from './poppy.js';
 
 const WEIGHTS: Record<string, number> = {
   'agents-md': 15, 'agents-md-public-safe': 10, 'server-json': 15, mcp: 15,
   'offer-jsonld': 15, 'honest-offer': 10, 'llms-txt': 10, sitemap: 10,
   // advanced ("world-class") web signals — na for CLI/dir targets, low weight
-  'well-known-agent': 5, openapi: 5, 'agents-page': 5,
+  'well-known-agent': 5, openapi: 5, 'agents-page': 5, poppy: 5,
   // is-agentic-parity web signals — na for CLI/dir targets, low weight
   'soft-404': 5, 'markdown-negotiation': 5, 'content-without-js': 5,
   'org-schema': 5, 'crawler-reachable': 5, 'rate-limit-headers': 5,
@@ -26,6 +27,7 @@ const FIXES: Record<string, string> = {
   'llms-txt': 'Publish /llms.txt with a concise product description.',
   sitemap: 'Publish /sitemap.xml for URL discovery.',
   'well-known-agent': 'Publish /.well-known/agent.json (or agent-card.json) so agents can discover capabilities.',
+  poppy: 'Publish /.well-known/poppy.json (Personal Agent Protocol draft 0.1) so personal agents can discover how to work with this company.',
   openapi: 'Publish /openapi.json so agents have a machine-readable API reference.',
   'agents-page': 'Publish an /agents page with agent-specific onboarding (self-serve key, sandbox, quickstart).',
   'soft-404': 'Return a real HTTP 404 (or 410) for unknown paths — never a 200 with your app shell, which tells agents every path exists.',
@@ -233,6 +235,11 @@ const SPECS: CheckSpec[] = [
     id: 'agents-page',
     status: (ctx) => advancedStatus(ctx, ctx.snapshot.agentsPage),
     note: (_ctx, status) => webNote(status, 'An /agents page is available.', 'No /agents onboarding page was found.'),
+  },
+  {
+    id: 'poppy',
+    status: (ctx) => poppyStatus(ctx.urlOnly, ctx.snapshot.poppy),
+    note: (ctx, status) => poppyNote(status, ctx.snapshot.poppy),
   },
   {
     id: 'soft-404',

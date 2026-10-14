@@ -77,6 +77,11 @@ describe('auditTarget', () => {
       if (url === `${base}/openapi.json`) return new Response('{"openapi":"3.1.0"}', {status: 200, headers: {'content-type': 'application/json', 'ratelimit-limit': '100', 'ratelimit-remaining': '99', 'ratelimit-reset': '60'}});
       if (url === `${base}/agents`) return new Response('<html>agents</html>', {status: 200, headers: {'content-type': 'text/html'}});
       if (url === `${base}/.well-known/ai-plugin.json`) return new Response('{"schema_version":"v1","name_for_model":"example","api":{"type":"openapi","url":"/openapi.json"},"auth":{"type":"none"}}', {status: 200, headers: {'content-type': 'application/json'}});
+      if (url === `${base}/.well-known/poppy.json`) return new Response(JSON.stringify({
+        protocol_version: '0.1',
+        organization: { name: 'Example Company', domain: 'example.com' },
+        web: {},
+      }), {status: 200, headers: {'content-type': 'application/json'}});
       // External registries (round 3):
       if (url.startsWith('https://www.wikidata.org/w/api.php')) return new Response('{"query":{"searchinfo":{"totalhits":1},"search":[{"title":"Q1"}]}}', {status: 200, headers: {'content-type': 'application/json'}});
       if (url.startsWith('https://registry.npmjs.org/-/v1/search')) return new Response('{"objects":[{"package":{"name":"example-product","links":{"homepage":"https://example.com"}}}]}', {status: 200, headers: {'content-type': 'application/json'}});
@@ -99,6 +104,7 @@ describe('auditTarget', () => {
     expect(check(report, 'wikidata').status).toBe('pass');
     expect(check(report, 'npm-package').status).toBe('pass');
     expect(check(report, 'mcp-registry').status).toBe('pass');
+    expect(check(report, 'poppy').status).toBe('pass');
   });
 
   it('detects external discovery gaps when registries have no match', async () => {
@@ -351,7 +357,20 @@ describe('auditTarget', () => {
     };
     const report = await auditTarget(base, { fetch: fetcher });
     expect(report.score).toBeLessThan(100);
-    expect(report.gaps.map(g => g.id)).toEqual(expect.arrayContaining(['well-known-agent', 'openapi', 'agents-page']));
+    expect(report.gaps.map(g => g.id)).toEqual(expect.arrayContaining(['well-known-agent', 'openapi', 'agents-page', 'poppy']));
+  });
+
+  it('rejects a poppy.json that is missing required draft 0.1 fields', async () => {
+    const base = 'https://badpoppy.example';
+    const fetcher = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === base) return new Response('<html><head><title>BadPoppy</title></head><body><h1>x</h1></body></html>', {status: 200, headers: {'content-type': 'text/html'}});
+      if (url === `${base}/.well-known/poppy.json`) return new Response('{"protocol_version":"0.1"}', {status: 200, headers: {'content-type': 'application/json'}});
+      return new Response('', {status: 404});
+    };
+    const report = await auditTarget(base, { fetch: fetcher });
+    expect(check(report, 'poppy').status).toBe('warn');
+    expect(check(report, 'poppy').note).toMatch(/organization\.name/);
   });
 });
 
@@ -376,6 +395,13 @@ describe('generators', () => {
   it('generates both static and Next route guidance', () => {
     expect(generate('agents-route', params)).toContain('public/agents.md');
     expect(generate('agents-route', {...params, framework: 'next'})).toContain("dynamic = 'force-static'");
+  });
+
+  it('generates a valid discovery-only poppy.json', () => {
+    const output = JSON.parse(generate('poppy', { ...params, domain: 'example.com' })) as Record<string, unknown>;
+    expect(output.protocol_version).toBe('0.1');
+    expect(output.organization).toEqual({ name: 'Example product', domain: 'example.com' });
+    expect(output.web).toEqual({});
   });
 });
 
