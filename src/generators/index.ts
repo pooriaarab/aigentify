@@ -4,14 +4,16 @@ import { generateAgentsMd } from './agents.js';
 import { generateAgentsRoute } from './agents-route.js';
 import { generateAuthMd } from './auth-md.js';
 import { generateOffer } from './offer.js';
+import { generatePoppy } from './poppy.js';
 import { generateServerJson } from './server.js';
 export * from './agents.js';
 export * from './agents-route.js';
 export * from './auth-md.js';
 export * from './offer.js';
+export * from './poppy.js';
 export * from './server.js';
 
-export type GeneratedArtifact = 'agents-md' | 'server-json' | 'offer' | 'agents-route' | 'auth-md';
+export type GeneratedArtifact = 'agents-md' | 'server-json' | 'offer' | 'agents-route' | 'auth-md' | 'poppy';
 export type GenerateParams = Partial<AigentifyConfig> & { framework?: string };
 
 function configFromParams(params: GenerateParams = {}): AigentifyConfig {
@@ -26,5 +28,6 @@ export function generate(artifact: GeneratedArtifact, params: GenerateParams = {
   if (artifact === 'offer') return generateOffer(config);
   if (artifact === 'agents-route') return generateAgentsRoute(config, params.framework);
   if (artifact === 'auth-md') return generateAuthMd(config);
+  if (artifact === 'poppy') return generatePoppy(config);
   throw new Error(`Unknown artifact: ${artifact}`);
 }

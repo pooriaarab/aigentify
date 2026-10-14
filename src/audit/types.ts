@@ -7,7 +7,7 @@ export interface AuditOptions { fetch?: typeof globalThis.fetch }
 export interface Endpoint { status: number; contentType: string; text: string; headers?: Record<string, string> }
 export interface Snapshot {
   agents: Endpoint; server: Endpoint; mcp: Endpoint; home: Endpoint; llms: Endpoint; sitemap: Endpoint;
-  wellKnown: Endpoint; openapi: Endpoint; agentsPage: Endpoint;
+  wellKnown: Endpoint; openapi: Endpoint; agentsPage: Endpoint; poppy: Endpoint;
   // is-agentic-parity signals (URL targets only)
   notFound: Endpoint; homeMarkdown: Endpoint; homeAsAgent: Endpoint;
   // Ora-parity round 2 (URL targets only)
