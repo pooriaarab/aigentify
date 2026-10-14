@@ -1,6 +1,6 @@
 {
   "name": "aigentify",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "mcpName": "io.github.pooriaarab/aigentify",
   "description": "Audit agent readiness for directories and URLs; generate AGENTS.md, MCP manifests, JSON-LD offers, and discovery files with TypeScript.",
   "type": "module",
