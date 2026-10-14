@@ -65,6 +65,7 @@ async function directorySnapshot(directory: string): Promise<Snapshot> {
     sitemap: { status: sitemapFile ? 200 : 404, contentType: 'application/xml', text: await readText(sitemapFile) },
     // advanced web signals are not meaningful for a repo directory — audited only for URL targets
     wellKnown: { status: 404, contentType: '', text: '' }, openapi: { status: 404, contentType: '', text: '' }, agentsPage: { status: 404, contentType: '', text: '' },
+    poppy: { status: 404, contentType: '', text: '' },
     notFound: { status: 404, contentType: '', text: '' }, homeMarkdown: { status: 404, contentType: '', text: '' }, homeAsAgent: { status: 404, contentType: '', text: '' },
     authMd: { status: 404, contentType: '', text: '' }, apiCatalog: { status: 404, contentType: '', text: '' }, agentCard: { status: 404, contentType: '', text: '' },
     aiPlugin: { status: 404, contentType: '', text: '' }, external: NO_EXTERNAL_DISCOVERY,
@@ -95,7 +96,7 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
   // A path no real site serves — used to detect soft-404s (200 + app shell).
   const missingPath = `${base}/aigentify-probe-${'x'.repeat(8)}-404`;
   const [agents, server, mcp, home, llms, sitemap, wellKnown, wellKnownCard, openapi, agentsPage,
-    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, aiPlugin] = await Promise.all([
+    notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, aiPlugin, poppy] = await Promise.all([
     fetchText(fetcher, `${base}/agents.md`), fetchText(fetcher, `${base}/server.json`), fetchText(fetcher, `${base}/.well-known/mcp`),
     fetchText(fetcher, base), fetchText(fetcher, `${base}/llms.txt`), fetchText(fetcher, `${base}/sitemap.xml`),
     fetchText(fetcher, `${base}/.well-known/agent.json`), fetchText(fetcher, `${base}/.well-known/agent-card.json`),
@@ -106,6 +107,7 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
     fetchText(fetcher, `${base}/auth.md`),
     fetchText(fetcher, `${base}/.well-known/api-catalog`),
     fetchText(fetcher, `${base}/.well-known/ai-plugin.json`),
+    fetchText(fetcher, `${base}/.well-known/poppy.json`),
   ]);
   // agent-card.json is the same URL as the well-known probe above — reuse the response instead of fetching twice.
   const agentCard = wellKnownCard;
@@ -116,7 +118,7 @@ async function urlSnapshot(target: string, fetcher: typeof globalThis.fetch): Pr
   const external = endpoints.every((item) => item.status === 0)
     ? NO_EXTERNAL_DISCOVERY
     : await probeExternalDiscovery(fetcher, base, productName(agentCard, home));
-  return { agents, server, mcp, home, llms, sitemap, wellKnown: wk, openapi, agentsPage,
+  return { agents, server, mcp, home, llms, sitemap, wellKnown: wk, openapi, agentsPage, poppy,
     notFound, homeMarkdown, homeAsAgent, authMd, apiCatalog, agentCard, aiPlugin, external,
     honestText: [home.text, offerBlock(agents.text)].join('\n'), hasMcp: server.status >= 200 && server.status < 400 || mcp.status >= 200 && mcp.status < 400, networkFailure: endpoints.every(item => item.status === 0), isUrl: true };
 }

@@ -14,6 +14,8 @@ export interface AigentifyConfig {
   npmPackage?: string;
   apiBaseUrl?: string;
   signupUrl?: string;
+  /** Public hostname for poppy.json organization.domain (no scheme, no www.). */
+  domain?: string;
   offer?: OfferConfig;
 }
 
