@@ -2,7 +2,7 @@
   "name": "aigentify",
   "version": "0.5.0",
   "mcpName": "io.github.pooriaarab/aigentify",
-  "description": "Audit and generate agent-native product surfaces",
+  "description": "Audit agent readiness for directories and URLs; generate AGENTS.md, MCP manifests, JSON-LD offers, and discovery files with TypeScript.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -26,11 +26,20 @@
   "homepage": "https://github.com/pooriaarab/aigentify",
   "bugs": "https://github.com/pooriaarab/aigentify/issues",
   "keywords": [
-    "agents",
-    "agentification",
+    "agent-readiness",
+    "ai-agents",
+    "audit",
+    "typescript",
+    "cli",
     "mcp",
-    "ai",
-    "json-ld"
+    "model-context-protocol",
+    "json-ld",
+    "agents-md",
+    "llms-txt",
+    "Wikidata",
+    "npm",
+    "Next.js",
+    "poppy"
   ],
   "publishConfig": {
     "access": "public"
